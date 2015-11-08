@@ -1,0 +1,934 @@
+#!/usr/bin/env python3
+#
+# Copyright (c) 2015 Robert Bragg
+#
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation
+# files (the "Software"), to deal in the Software without
+# restriction, including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense, and/or sell copies
+# of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+# ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+import argparse
+import subprocess
+import os
+import os.path as path
+import sys
+import uuid
+
+_subdir = "subdir"
+_subdir_path = "subdir/"
+_subdir_config = "subdir/.git-subdir"
+_original_branch = None
+
+_config = {}
+
+def run_priv(args):
+
+    if subdir_args.debug:
+        print("# " + " ".join(map(str, args)), file=sys.stderr)
+
+        try:
+            output = subprocess.check_output(args, stderr=subprocess.STDOUT).decode("utf-8").strip()
+            print("# > " + "\n# > ".join(output.splitlines()))
+            print("# return status = 0")
+            return 0
+        except subprocess.CalledProcessError as e:
+            output = e.output.decode("utf-8").strip()
+            print("# > " + "\n# > ".join(output.splitlines()))
+            print("# return status = " + str(e.returncode))
+            return e.returncode;
+    else:
+        return subprocess.call(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def run_priv_interactive(args):
+
+    if subdir_args.debug:
+        print("# " + " ".join(map(str, args)), file=sys.stderr)
+        returncode = subprocess.call(args)
+        print("# return status = " + str(returncode))
+        return returncode
+    else:
+        return subprocess.call(args)
+
+
+def run_priv_output(args):
+
+    if subdir_args.debug:
+        print("# " + " ".join(map(str, args)), file=sys.stderr)
+
+    try:
+        output = subprocess.check_output(args).decode("utf-8").strip()
+    except:
+        output = ""
+
+    if subdir_args.debug:
+        print("# > " + "\n# > ".join(output.splitlines()))
+
+    return output
+
+
+def subdir_config_get(key):
+
+    val = run_priv_output(['git', 'config', '-f', _subdir_config, key])
+    if val != "":
+        return val
+    else:
+        return None
+
+
+def subdir_config_set(key, value):
+
+    run_priv_output(['git', 'config', '-f', _subdir_config, 'subdir.' + key, value])
+
+    _config[key] = value
+
+
+def get_branch_name():
+
+    return run_priv_output(['git', 'symbolic-ref', '--short', '--quiet', 'HEAD'])
+
+
+def initialize_state():
+
+    global _original_branch
+
+    # TODO: check we aren't in the middle of a failed rebase
+
+    if run_priv(['git', 'rev-parse', '--git-dir']) != 0:
+        sys.exit("Not a git repository (or any of the parent directories)")
+
+    _original_branch = get_branch_name()
+    if len(_original_branch) == 0:
+        sys.exit("can't use git-subdir while on detached HEAD")
+
+    if _original_branch[:7] == "subdir/":
+        sys.exit("can't use git-subdir while on a subdir/ branch")
+
+
+def do_init():
+
+    if not path.isdir(_subdir):
+        os.mkdir(_subdir)
+
+    subdir_config_set('integration.url', subdir_args.repository)
+
+    integration_branch = subdir_args.branch
+    if integration_branch == None:
+        integration_branch = "master"
+    subdir_config_set('integration.branch', integration_branch)
+
+    if subdir_args.pre_integrated_commit != None:
+        subdir_config_set('integration.ref',
+                          subdir_args.pre_integrated_commit)
+
+    if subdir_args.upstream != None:
+        subdir_config_set('upstream.url', subdir_args.upstream)
+
+        upstream_branch = subdir_args.upstream_branch
+        if upstream_branch == None:
+            upstream_branch = "master"
+        subdir_config_set('upstream.branch', upstream_branch)
+
+        
+    load_subdir_config()
+
+
+def move_to_git_root():
+
+    root = run_priv_output(['git', 'rev-parse', '--show-toplevel'])
+    os.chdir(root)
+
+
+def validate_subdir_path(subdir_path):
+    global _subdir_path
+    global _subdir_config
+    global _subdir
+
+    if subdir_path != subdir_path.strip():
+        sys.exit("Invalid subdir path '" + subdir_path + "' contains leading or trailing white space")
+
+    if len(subdir_path) == 0:
+        sys.exit("Empty subdir path given")
+
+    if path.isabs(subdir_path):
+        sys.exit("Expected relative subdir path")
+
+    prefix = run_priv_output(['git', 'rev-parse', '--show-prefix'])
+    subdir_path = path.normpath(path.join(prefix, subdir_path))
+
+    if subdir_path == ".":
+        sys.exit("Toplevel directory can't be a subdirectory")
+
+    move_to_git_root()
+
+    _subdir_path = subdir_path
+    _subdir_config = path.join(subdir_path, '.git-subdir')
+    _subdir = path.basename(subdir_path)
+
+
+def validate_new_subdir(subdir_path, allow_existing_content=False):
+
+    validate_subdir_path(subdir_path)
+
+    if allow_existing_content == False and path.exists(_subdir_path):
+        sys.exit("Subdir '" + _subdir_path + "' already initialized")
+
+
+def load_subdir_config():
+    """Read properties from _subdir_config ensuring config is valid, and
+    filling in defaults"""
+    global _config
+
+    _config['integration.url'] = subdir_config_get('subdir.integration.url')
+    if _config['integration.url'] == None:
+        sys.exit('Failed to read integration remote url from ' + config)
+
+    _config['integration.branch'] = subdir_config_get('subdir.integration.branch')
+    if _config['integration.branch'] == None:
+        _config['integration.branch'] = 'master'
+
+    _config['integration.ref'] = subdir_config_get('subdir.integration.ref')
+
+    _config['upstream.url'] = subdir_config_get('subdir.upstream.url')
+    if _config['upstream.url'] != None:
+        _config['upstream.branch'] = subdir_config_get('subdir.upstream.branch')
+
+        if _config['upstream.branch'] == None:
+            _config['upstream.branch'] = 'master'
+    else:
+        _config['upstream.branch'] = None
+
+
+def validate_existing_subdir(subdir_path):
+
+    validate_subdir_path(subdir_path)
+
+    if not path.exists(_subdir_config):
+        sys.exit("Subdir '" + _subdir_path + "' not initialized")
+
+    load_subdir_config()
+
+
+# XXX: without --pre-integrated-commit 'init' is a redundant subcommand
+def init_cmd(args):
+
+    initialize_state()
+
+    if path.isdir(args.subdir) and args.pre_integrated_commit == None:
+        sys.exit("--pre-integrated-commit must be given for pre-existing " + _subdir + "/")
+
+    if args.pre_integrated_commit != None:
+        validate_new_subdir(args.subdir, allow_existing_content = True)
+    else:
+        validate_new_subdir(args.subdir, allow_existing_content = False)
+
+    if args.repository == None:
+        sys.exit("Must at least specify an integration repository")
+
+    do_init()
+
+    if not args.quiet:
+        print("Intialized " + _subdir_path + " Subdir")
+        do_status()
+
+
+def init_from_subrepo_cmd(args):
+
+    initialize_state()
+
+    validate_new_subdir(args.subdir, allow_existing_content=True)
+
+    repo_config = path.join(_subdir, '.gitrepo')
+    if not path.exists(repo_config):
+        sys.exit("No git-subrepo (" + repo_config + ") config found")
+
+    setattr(subdir_args, 'repository', None)
+    setattr(subdir_args, 'branch', None)
+    setattr(subdir_args, 'upstream', None)
+    setattr(subdir_args, 'upstream_branch', None)
+
+    repository = run_priv_output(['git', 'config', '-f', repo_config, "subrepo.remote"])
+    branch = run_priv_output(['git', 'config', '-f', repo_config, "subrepo.branch"])
+
+    subdir_args.repository = repository;
+    subdir_args.branch = branch;
+
+    if subdir_args.as_upstream:
+        subdir_args.upstream = repository;
+        subdir_args.upstream_branch = branch;
+
+    pre_integrated_commit = run_priv_output(['git', 'config', '-f', repo_config, "subrepo.commit"])
+    if subdir_args.pre_integrated_commit == None:
+        subdir_args.pre_integrated_commit = pre_integrated_commit
+
+    do_init()
+
+    if not args.quiet:
+        print("Intialized " + _subdir + " Subdir")
+        do_status()
+
+
+def git_fetch(remote):
+
+    fetch_cmd = ['git', 'fetch']
+    if subdir_args.quiet:
+        fetch_cmd.append('--quiet')
+    if subdir_args.verbose:
+        fetch_cmd.append('--verbose')
+    if subdir_args.progress:
+        fetch_cmd.append('--progress')
+
+    fetch_cmd.append(remote)
+
+    run_priv_interactive(fetch_cmd)
+
+
+def update_subdir_remotes():
+
+    upstream_url = _config['upstream.url']
+    if upstream_url != None:
+        if run_priv(['git', 'config', 'remote.subdir-upstream/' + _subdir + '.url']):
+            run_priv(['git', 'remote', 'add', 'subdir-upstream/' + _subdir,
+                      upstream_url])
+        else:
+            run_priv(['git', 'remote', 'set-url', 'subdir-upstream/' + _subdir,
+                      upstream_url])
+
+    integration_url = _config['integration.url']
+    if integration_url != None:
+        if run_priv(['git', 'config', 'remote.subdir-integration/' + _subdir + '.url']):
+            run_priv(['git', 'remote', 'add', 'subdir-integration/' + _subdir, integration_url])
+        else:
+            run_priv(['git', 'remote', 'set-url', 'subdir-integration/' + _subdir, integration_url])
+
+
+def do_fetch():
+
+    update_subdir_remotes()
+
+    upstream_url = _config['upstream.url']
+    if upstream_url != None:
+        git_fetch('subdir-upstream/' + _subdir)
+
+    integration_url = _config['integration.url']
+    if integration_url != None:
+        git_fetch('subdir-integration/' + _subdir)
+
+
+def fetch_cmd(args):
+
+    initialize_state()
+
+    # each subdir path will be relative to cwd...
+    saved_cwd = os.getcwd()
+
+    for subdir in args.subdir:
+        os.chdir(saved_cwd)
+        validate_existing_subdir(subdir)
+
+    for subdir in args.subdir:
+        os.chdir(saved_cwd)
+        validate_existing_subdir(subdir)
+        do_fetch()
+
+
+def do_commit(integration_ref, commit_description):
+
+    assert(path.isdir(_subdir))
+
+    # It's important that the integration_commit stored in .git-subdir:
+    # subdir.integration.ref be a commit hash not a ref otherwise we might
+    # loose track of the specific commit whose content is being committed to
+    # _subdir
+    integration_commit = run_priv_output(['git', 'rev-parse', integration_ref])
+    if integration_commit == "":
+        sys.exit("failed to parse ref: " + integration_ref)
+
+    if run_priv(['git', 'rev-list', '-1', integration_commit]) != 0:
+        sys.exit(integration_commit + " not found")
+
+    with open(_subdir_config, 'r') as fp:
+        saved_git_subdir = fp.read()
+
+    run_priv(['git', 'rm', '-fr', '--ignore-unmatch', _subdir])
+    run_priv(['rm', '-fr', _subdir])
+    os.mkdir(_subdir)
+
+    # Index <tree-ish> content into <subdir>/
+    run_priv(['git', 'read-tree', '--prefix=' + _subdir + '/', integration_commit])
+
+    with open(_subdir_config, 'w') as fp:
+        fp.write(saved_git_subdir)
+
+    # Make sure .git-subdir changes for each commit by adding a random uuid
+    # this is so the log for .git-subdir can be used to identify subdir
+    # squash commits
+    subdir_config_set('commit-uuid', str(uuid.uuid4()))
+
+    # We record what commit we are squashing to allow rebasing
+    # future changes on this
+    subdir_config_set('integration.ref', integration_commit)
+
+    run_priv(['git', 'add', _subdir_config])
+
+    commit_command = ['git', 'commit' ]
+    if subdir_args.message != None:
+        commit_command.extend(['-m', subdir_args.message])
+        run_priv(commit_command)
+    else:
+        run_priv_interactive(commit_command)
+
+    run_priv(['git', 'checkout', '-f', _subdir])
+
+
+def check_clean_subdir():
+    if subdir_args.force == False and \
+       run_priv_output(['git', 'status', '--porcelain', _subdir]) != "":
+            status = run_priv_output(['git', 'status', _subdir])
+            sys.exit('Untracked files or pending changes in ' + _subdir +
+                     ' will be lost:\n\n' + status +
+                     '\n\Ignore with -f/--force')
+
+
+def commit_cmd(args):
+
+    initialize_state()
+    validate_existing_subdir(args.subdir)
+    check_clean_subdir()
+
+    integration_commit = run_priv_output(['git', 'rev-parse', args.commit])
+    commit_description = integration_commit
+
+    do_commit(integration_commit, commit_description)
+
+
+def clone_cmd(args):
+
+    initialize_state()
+    validate_new_subdir(args.subdir)
+
+    if args.repository == None:
+        sys.exit("Must at least specify an integration repository")
+
+    do_init()
+    do_fetch()
+
+    branch = _config['integration.branch']
+    remote_ref = 'subdir-integration/' + _subdir + "/" + branch
+
+    if run_priv(['git', 'rev-list', '-1', remote_ref]) != 0:
+        if _config['upstream.branch']:
+            branch = _config['upstream.branch']
+            remote_ref = 'subdir-upstream/' + _subdir + "/" + branch
+            if run_priv(['git', 'rev-list', '-1', remote_ref]) != 0:
+                sys.exit("Failed to find branch to commit after fetching from repositories")
+        else:
+            sys.exit("Failed to find branch to commit after fetching from repository")
+
+    do_commit(remote_ref, remote_ref)
+
+
+def find_last_subdir_commit():
+    # Identify the last local commit that updated _subdir based on the log
+    # of _subdir_config but ignoring url/branch config changes
+    blame = run_priv_output(['git', 'blame', '-p', '-L', '/commit-uuid/,+1', _subdir_config]).splitlines()
+    if blame != "":
+        return blame[0].split()[0]
+    else:
+        return None
+
+
+def do_branch(branch_name, restore_branch=True):
+
+    assert(branch_name != None)
+
+    if run_priv(['git', 'rev-list', '-1', "refs/heads/" + branch_name]) == 0:
+        sys.exit(branch_name + " already exists")
+
+    base_branch = "subdir/" + _subdir + "/_branch_base"
+
+
+    integration_commit = _config['integration.ref']
+    if run_priv(['git', 'rev-list', '-1', integration_commit]) != 0:
+        # TODO: print a more detailed error message explaining the problem...
+        sys.exit(".git-subdir:subdir.integration.ref (" + integration_commit + ") not found")
+
+    last_subdir_commit = find_last_subdir_commit()
+    if last_subdir_commit == None:
+        sys.exit("Failed to identify last commit that updated the contents of " + _subdir + " squash commit (via `git blame -p -L /commit-uuid/,+1 " + _subdir_config + "')")
+
+    revs = run_priv_output(['git', 'rev-list', last_subdir_commit + "..HEAD", '-1', _subdir]).splitlines()
+    if len(revs) != 1:
+        # No subdir changes since commit so straight-forward branch:
+        if restore_branch:
+            run_priv(['git', 'branch', branch_name, integration_commit])
+        else:
+            run_priv(['git', 'checkout', '-b', branch_name, integration_commit])
+        return
+
+    if subdir_args.debug:
+        print("last local squash commit = " + last_subdir_commit, file=sys.stderr)
+
+    # Create a temporary branch to rebase onto
+    if run_priv(['git', 'checkout', '-b', base_branch, last_subdir_commit]) != 0:
+        sys.exit("Failed to create temporary rebase branch")
+
+    # Reset temporary rebase branch to last integration commit
+    #
+    # NB: <last_subdir_commit> and <integration_commit> correspond to
+    #     each other except that <last_subdir_commit> has a subdir/
+    #     directory and in <integration_commit> the layout matches
+    #     the upstream repo with the subdir/ content at the top of
+    #     the repo
+    #
+    # This effectively stages a diff from the upstream layout (including
+    # integration changes) and the embedded layout with a subdir/
+    # directory.
+    #
+    if run_priv(['git', 'reset', '--soft', integration_commit]) != 0:
+        run_priv(['git', 'checkout', _original_branch])
+        sys.exit("Failed to prepare temporary rebase branch")
+
+    # Squash commit representing diff between upstream (+integration
+    # changes) and last subdir/ commit
+    #
+    # This is to provide a temporary base for any subsequent local
+    # changes that affect subdir/
+    #
+    if run_priv(['git', 'commit', '-m', "git-subdir/" + _subdir + ": temporary upstream->local layout squash commit"]) != 0:
+        run_priv(['git', 'checkout', _original_branch])
+        sys.exit("Failed to prepare temporary rebase branch")
+
+    # Create branch to filter based on _original_branch
+    if run_priv(['git', 'checkout', '-b', branch_name, _original_branch]) != 0:
+        run_priv(['git', 'checkout', _original_branch])
+        sys.exit("Failed to create branch")
+
+    # Rebase _original_branch onto base_branch, from
+    # <last_subdir_commit>
+    if run_priv(['git', 'rebase', '--onto', base_branch, last_subdir_commit]) != 0:
+        run_priv(['git', 'checkout', _original_branch])
+        sys.exit("Failed to rebase local changes since last " + _subdir + " integration commit")
+
+    # Delete temporary rebase branch
+    if run_priv(['git', 'branch', '-D', base_branch]) != 0:
+        run_priv(['git', 'checkout', _original_branch])
+        sys.exit("Failed to delete temporary rebase branch")
+
+    # Apply subdirectory filter on rebased commits
+
+    if run_priv(['git', 'filter-branch', '-f', '--subdirectory-filter', _subdir, integration_commit + "..HEAD"]) != 0:
+        run_priv(['git', 'checkout', _original_branch])
+        sys.exit("Failed to filter branch")
+
+    # Filter out .git-subdir (all that's left of temporary squash commit)"
+    if run_priv(['git', 'filter-branch', '-f', '--index-filter', "git rm --cached --ignore-unmatch -fr .git-subdir", '--prune-empty', integration_commit + "..HEAD"]) != 0:
+        run_priv(['git', 'checkout', _original_branch])
+        sys.exit("Failed to filter out .git-subdir branch")
+
+    # Done
+    if restore_branch:
+        run_priv(['git', 'checkout', _original_branch])
+
+
+def branch_cmd(args):
+
+    initialize_state()
+    validate_existing_subdir(args.subdir)
+    check_clean_subdir()
+
+    if args.branch[:7] == "subdir/":
+        sys.exit("Can't create branch under 'subdir/' namespace")
+
+    #do_fetch(require_integration_remote=True)
+    do_branch(args.branch)
+
+
+# TODO: support --continue and maybe interactive rebasing
+def do_rebase():
+
+    if subdir_args.local:
+        update_subdir_remotes()
+    else:
+        do_fetch()
+
+    rebase_branch_stem = 'subdir/' + _subdir + '/_rebase'
+    integration_rebase_branch = rebase_branch_stem + '_integration'
+    local_rebase_branch = rebase_branch_stem + '_local'
+
+    if rebase_branch_stem in get_branch_name():
+        sys.exit("In the middle of failed git subdir rebase")
+
+    run_priv(['git', 'branch', '-D', integration_rebase_branch])
+    run_priv(['git', 'branch', '-D', local_rebase_branch])
+
+    # The integration_commit is the last upstream/integration branch commit
+    # whose content was squash committed to _subdir. After the do_branch()
+    # below we will expect the current branch to be based on this
+    # integration_commit, followed by any local changes to _subdir that haven't
+    # yet been pushed upstream
+    integration_commit = _config['integration.ref']
+    if run_priv(['git', 'rev-list', '-1', integration_commit]) != 0:
+        # TODO: print a more detailed error message explaining the problem...
+        sys.exit(".git-subdir:subdir.integration.ref (" + integration_commit + ") not found")
+
+
+    integration_branch = _config['integration.branch']
+    integration_remote = "subdir-integration/" + _subdir + "/" + integration_branch
+
+
+    if subdir_args.onto:
+        local_rebase_onto = run_priv_output(['git', 'rev-parse', subdir_args.onto])
+    else:
+        if run_priv(['git', 'merge-base', '--is-ancestor', integration_commit, integration_remote]) != 0:
+            sys.exit("integration branch doesn't contain last squashed commit:" +
+                     "\n  " + integration_commit +
+                     "\nUse --onto <base> to specify what to rebase local " +
+                     "\nchanges onto, e.g. if you have manually rebased an " +
+                     "\nintegration branch on the latest upstream")
+
+        local_rebase_onto = integration_remote
+
+        # If an upstream branch has been configured then rebase
+        # the integration branch on the latest upstream...
+        #
+
+        upstream_branch = _config['upstream.branch']
+        if upstream_branch:
+            upstream_remote = "subdir-upstream/" + _subdir + "/" + upstream_branch
+            if run_priv(['git', 'rev-list', '-1', upstream_remote]) != 0:
+                sys.exit("Upstream remote configured but not able to find " +
+                         "upstream ref to rebase onto")
+
+            integration_rebase_branch = rebase_branch_stem + '_integration'
+            if run_priv(['git', 'checkout', '-b',
+                         integration_rebase_branch, integration_remote]) != 0:
+                sys.exit("Failed to create temporary rebase branch from " + integration_remote)
+            if run_priv(['git', 'rebase', upstream_remote]) != 0:
+                # TODO: support --continue
+                run_priv(['git', 'checkout', _original_branch])
+                run_priv(['git', 'branch', '-D', integration_rebase_branch])
+                sys.exit("Failed to rebase integration branch on upstream")
+
+            run_priv(['git', 'checkout', _original_branch])
+
+            local_rebase_onto = integration_rebase_branch
+
+
+    local_rebase_branch = rebase_branch_stem + '_local'
+
+    do_branch(local_rebase_branch, restore_branch=False)
+
+    if run_priv(['git', 'rebase', '--onto', local_rebase_onto, integration_commit]) != 0:
+        # TODO: support --continue
+        run_priv(['git', 'checkout', _original_branch])
+        run_priv(['git', 'branch', '-D', integration_rebase_branch])
+        run_priv(['git', 'branch', '-D', local_rebase_branch])
+        sys.exit("After resolving the subdir rebase conflict, run 'git subdir rebase --continue' (TODO)") #TODO
+
+    run_priv(['git', 'checkout', _original_branch])
+
+    do_commit(local_rebase_branch, _subdir + ": rebase")
+
+    run_priv(['git', 'branch', '-D', integration_rebase_branch])
+    run_priv(['git', 'branch', '-D', local_rebase_branch])
+
+
+def rebase_cmd(args):
+
+    initialize_state()
+    validate_existing_subdir(args.subdir)
+
+    do_rebase()
+
+
+def push_cmd(args):
+
+    initialize_state()
+    validate_existing_subdir(args.subdir)
+
+    update_subdir_remotes()
+
+    push_branch = 'subdir/' + _subdir + '/_push'
+    run_priv(['git', 'branch', '-D', push_branch])
+
+    do_branch(push_branch)
+
+    if args.upstream:
+        if _config['upstream.url'] == None:
+            sys.exit('No upstream configured')
+        remote = "subdir-upstream/" + _subdir
+        remote_branch = _config['upstream.branch']
+    else:
+        remote = "subdir-integration/" + _subdir
+        remote_branch = _config['integration.branch']
+
+    push_command = ['git', 'push', remote, push_branch + ':' +  remote_branch]
+    if args.dry_run:
+        push_command.append('--dry-run')
+
+    run_priv_interactive(push_command)
+
+    run_priv(['git', 'branch', '-D', push_branch])
+    
+
+def do_status():
+
+    print(_subdir + ":")
+
+    print(" Upstream repo (for monitoring + pulling third-party, upstream changes)");
+    upstream_remote = None
+    upstream_url = _config['upstream.url']
+    if upstream_url:
+        print("  upstream url = " + _config['upstream.url'])
+        upstream_branch = _config['upstream.branch']
+        print("  upstream branch = " + upstream_branch)
+
+        upstream_remote = "subdir-upstream/" + _subdir + "/" + upstream_branch
+        if run_priv(['git', 'rev-list', '-1', upstream_remote]) != 0:
+            print("  WARNING: no " + upstream_remote + " remote found (run git subdir fetch " + _subdir + ")")
+            upstream_remote = None
+    else:
+        print("  no upstream branch being tracked")
+
+    print("")
+    print(" Integration repo (for maintaining project specific integration changes)")
+    integration_remote = None
+    integration_url = _config['integration.url']
+    if integration_url != None:
+        print("  integration url = " + _config['integration.url'])
+        integration_branch = _config['integration.branch']
+        print("  integration branch = " + integration_branch)
+
+        integration_remote = "subdir-integration/" + _subdir + "/" + integration_branch
+        if run_priv(['git', 'rev-list', '-1', integration_remote]) != 0:
+            print("  WARNING: no " + integration_remote + " remote found (run git subdir fetch " + _subdir + ")")
+            integration_remote = None
+    else:
+        print("  no integration branch tracked")
+
+    if integration_url == None and upstream_url == None:
+        print("")
+        print("WARNING: currently no remote repos have been configured for " + _subdir)
+
+    integration_commit = _config['integration.ref']
+    if integration_commit != None:
+        if run_priv(['git', 'rev-list', '-1', integration_commit]) == 0:
+            found_commit = False
+
+            if upstream_remote != None and \
+               run_priv(['git', 'merge-base', '--is-ancestor', integration_commit, upstream_remote]) == 0:
+                found_commit = True
+            elif integration_remote != None and \
+                 run_priv(['git', 'merge-base', '--is-ancestor', integration_commit, integration_remote]) == 0:
+                found_commit = True
+
+            if not found_commit:
+                print("  last squashed commit = " + integration_commit + " (unpublished)")
+                print("   WARNING: last squashed commit is not available on a remote upstream, or integration, branch")
+                print("   - This means others can't easily manage further " + _subdir + " changes")
+            else:
+                print("  last squashed commit = " + integration_commit + " (OK: published)")
+        else:
+            print("  last squashed commit = " + integration_commit + " (not found)")
+            print("")
+            print("   WARNING: the last squashed " + _subdir + " commit was not found locally")
+            print("   - This will be needed to rebase on new upstream changes")
+            print("   - This will be needed to branch " + _subdir + " with an upstream layout")
+            print("   - This doesn't affect making changes under " + _subdir + "")
+            print("   - Whoever last squashed changes under " + _subdir + " should publish their integration branch if the commit was not from upstream")
+            if integration_url != None or upstream_url != None:
+                print("   - It might be enough to run 'git subdir fetch " + _subdir)
+
+    if subdir_args.debug:
+        last_subdir_commit = find_last_subdir_commit()
+
+        if last_subdir_commit != None:
+            revs = run_priv_output(['git', 'rev-list', last_subdir_commit + "..HEAD", '-1', _subdir]).splitlines()
+            print("last local commit updating subdir = " + last_subdir_commit, file=sys.stderr)
+
+            if len(revs) != 1:
+                print("No " + _subdir + " changes since last squash commit", file=sys.stderr)
+        else:
+            print("Failed to identify last " + _subdir + "squash commit via `git blame -p -L /commit-uuid/,+1 " + _subdir_config + "'", file=sys.stderr)
+
+
+def status_cmd(args):
+
+    initialize_state()
+
+    # each subdir path will be relative to cwd...
+    saved_cwd = os.getcwd()
+
+    for subdir in args.subdir:
+        os.chdir(saved_cwd)
+        validate_existing_subdir(subdir)
+        do_status()
+        print("")
+
+
+def do_config(key, value=None):
+
+    if subdir_args.unset:
+        run_priv(['git', 'config', '-f', _subdir_config, '--unset', 'subdir.' + key])
+        msg = _subdir + ": unset " + key
+        run_priv(['git', 'commit', '-m', msg, _subdir_config])
+        return
+
+    if value == None:
+        val = run_priv_output(['git', 'config', '-f', _subdir_config, 'subdir.' + key])
+        print(val)
+    else:
+        run_priv(['git', 'config', '-f', _subdir_config, 'subdir.' + key, value])
+        msg = _subdir + ": set " + key + " = " + value
+        if len(msg) > 50:
+            msg = _subdir + ": set " + key + "\n\nnew value:\n\n  " + value
+        run_priv(['git', 'commit', '-m', msg, _subdir_config])
+
+
+def config_cmd(args):
+
+    initialize_state()
+    validate_existing_subdir(args.subdir)
+
+    keys = { 'upstream.url', 'upstream.branch', 'integration.url', 'integration.branch' }
+    if args.key not in keys:
+        sys.exit('invalid subdir key "' + args.key + '"')
+
+    do_config(args.key, args.value)
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(prog='git subdir')
+    parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
+
+    subparsers = parser.add_subparsers()
+
+    init_parser = subparsers.add_parser('init')
+    init_parser.add_argument("-q", "--quiet", action="store_true")
+    init_parser.add_argument('-b', "--branch", help="The branch to maintain integration changes on")
+    init_parser.add_argument("--upstream", help="An optional upstream repository to monitor")
+    init_parser.add_argument("--upstream-branch", help="An optional upstream branch to monitor")
+    init_parser.add_argument("--pre-integrated-commit", required=False, help="A remote commit ID that the pre-existing subdirectory contents correspond to")
+    init_parser.add_argument("repository", help="The repository to maintain integration changes in")
+    init_parser.add_argument("upstream_repository", nargs='?', default=None, help="An optional upstream to monitor")
+    init_parser.add_argument("subdir")
+    init_parser.set_defaults(func=init_cmd)
+
+    init_sr_parser = subparsers.add_parser('init_from_subrepo')
+    init_sr_parser.add_argument("-q", "--quiet", action="store_true")
+    init_sr_parser.add_argument("--as-upstream", action="store_true", help="Consider the git-subrepo remote url to be the upstream and integration repository")
+    init_sr_parser.add_argument("subdir")
+    init_sr_parser.set_defaults(func=init_from_subrepo_cmd)
+
+    fetch_parser = subparsers.add_parser('fetch')
+    fetch_parser.add_argument("-q", "--quiet", action="store_true")
+    fetch_parser.add_argument("-v", "--verbose", action="store_true")
+    fetch_parser.add_argument("--progress", action="store_true")
+    fetch_parser.add_argument("subdir", nargs='*', default=["."])
+    fetch_parser.set_defaults(func=fetch_cmd)
+
+    commit_parser = subparsers.add_parser('commit')
+    commit_parser.add_argument("-m", "--message")
+    commit_parser.add_argument("--dry-run", action="store_true")
+    commit_parser.add_argument("-f", "--force", action="store_true")
+    commit_parser.add_argument("commit")
+    commit_parser.add_argument("subdir", nargs='?', default=".")
+    commit_parser.set_defaults(func=commit_cmd)
+
+    clone_parser = subparsers.add_parser('clone')
+    clone_parser.add_argument("-q", "--quiet", action="store_true")
+    clone_parser.add_argument("-v", "--verbose", action="store_true")
+    clone_parser.add_argument('-b', "--branch", help="The branch to maintain integration changes on")
+    clone_parser.add_argument("--progress", action="store_true")
+    clone_parser.add_argument("--upstream", help="An optional upstream repository to monitor")
+    clone_parser.add_argument("--upstream-branch", help="An optional upstream branch to monitor")
+    clone_parser.add_argument("-m", "--message")
+    clone_parser.add_argument("repository", help="The repository to maintain integration changes in")
+    clone_parser.add_argument("upstream_repository", nargs='?', default=None, help="An optional upstream to monitor")
+    clone_parser.add_argument("subdir")
+    clone_parser.set_defaults(func=clone_cmd)
+
+    branch_parser = subparsers.add_parser('branch')
+    branch_parser.add_argument('-b', "--branch", required=True)
+    branch_parser.add_argument("-v", "--verbose", action="store_true")
+    branch_parser.add_argument("subdir", nargs='?', default=".")
+    branch_parser.set_defaults(func=branch_cmd)
+
+    rebase_parser = subparsers.add_parser('rebase') 
+    rebase_parser.add_argument("-q", "--quiet", action="store_true")
+    rebase_parser.add_argument("-v", "--verbose", action="store_true")
+    rebase_parser.add_argument("-l", "--local", action="store_true")
+    rebase_parser.add_argument("-m", "--message")
+    rebase_parser.add_argument("--onto")
+    #FIXME -p, --preserve-merges, -s, --strategy
+    rebase_parser.add_argument("subdir", nargs='?', default=".")
+    rebase_parser.set_defaults(func=rebase_cmd)
+
+    push_parser = subparsers.add_parser('push')
+    push_parser.add_argument("--upstream", action="store_true")
+    push_parser.add_argument("--dry-run", action="store_true")
+    push_parser.add_argument("subdir", nargs='?', default=".")
+    push_parser.set_defaults(func=push_cmd)
+
+    status_parser = subparsers.add_parser('status')
+    status_parser.add_argument("subdir", nargs='*', default=["."])
+    status_parser.set_defaults(func=status_cmd)
+
+    config_parser = subparsers.add_parser('config')
+    config_parser.add_argument("--key", required=True)
+    config_parser.add_argument("--value")
+    config_parser.add_argument("--unset", action="store_true")
+    config_parser.add_argument("subdir", nargs='?', default=".")
+    config_parser.set_defaults(func=config_cmd)
+
+    # TODO: investigate using git graft points to support a 'git subdir log
+    # <subdir>' That grafts the upstream subdir log with the local ./subdir/
+    # log
+
+    subdir_args = parser.parse_args()
+
+
+    # To allow common code to support multiple commands we do some
+    # normalizing of the returned subdir_args namespace.
+    #
+    # E.g. --dry-run isn't applicable to git subdir clone, but the
+    # implementation is based on do_commit() which is shared between commands
+    # including git subdir commit which does have a --dry-run option
+    #
+
+    if not "dry_run" in subdir_args:
+        setattr(subdir_args, 'dry_run', False)
+
+    if not "progress" in subdir_args:
+        setattr(subdir_args, 'progress', False)
+
+    # for rebase which is depends on do_commit()
+    if not "message" in subdir_args:
+        setattr(subdir_args, 'message', None)
+
+    if not "force" in subdir_args:
+        setattr(subdir_args, 'force', False)
+
+    # only valid with init cmd, but expected by do_init()...
+    if not "pre_integrated_commit" in subdir_args:
+        setattr(subdir_args, 'pre_integrated_commit', None)
+
+    subdir_args.func(subdir_args)
+
