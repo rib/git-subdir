@@ -29,9 +29,12 @@ import os.path as path
 import sys
 import uuid
 
+version = 1
+
 _subdir = "subdir"
 _subdir_path = "subdir/"
-_subdir_config = "subdir/.git-subdir"
+_subdir_meta = "subdir/.git-subdir"
+_subdir_config = "subdir/.git-subdir/config"
 _original_branch = None
 
 _config = {}
@@ -125,6 +128,11 @@ def do_init():
     if not path.isdir(_subdir):
         os.mkdir(_subdir)
 
+    if not path.isdir(_subdir_meta):
+        os.mkdir(_subdir_meta)
+
+    subdir_config_set('version', str(version))
+
     subdir_config_set('integration.url', subdir_args.repository)
 
     integration_branch = subdir_args.branch
@@ -156,6 +164,7 @@ def move_to_git_root():
 
 def validate_subdir_path(subdir_path):
     global _subdir_path
+    global _subdir_meta
     global _subdir_config
     global _subdir
 
@@ -177,7 +186,8 @@ def validate_subdir_path(subdir_path):
     move_to_git_root()
 
     _subdir_path = subdir_path
-    _subdir_config = path.join(subdir_path, '.git-subdir')
+    _subdir_meta = path.join(subdir_path, '.git-subdir')
+    _subdir_config = path.join(_subdir_meta, 'config')
     _subdir = path.basename(subdir_path)
 
 
@@ -285,17 +295,19 @@ def init_from_subrepo_cmd(args):
 
 def git_fetch(remote):
 
-    fetch_cmd = ['git', 'fetch']
+    update_subdir_remotes()
+
+    fetch_command = ['git', 'fetch']
     if subdir_args.quiet:
-        fetch_cmd.append('--quiet')
+        fetch_command.append('--quiet')
     if subdir_args.verbose:
-        fetch_cmd.append('--verbose')
+        fetch_command.append('--verbose')
     if subdir_args.progress:
-        fetch_cmd.append('--progress')
+        fetch_command.append('--progress')
 
-    fetch_cmd.append(remote)
+    fetch_command.append(remote)
 
-    run_priv_interactive(fetch_cmd)
+    run_priv_interactive(fetch_command)
 
 
 def update_subdir_remotes():
@@ -310,16 +322,19 @@ def update_subdir_remotes():
                       upstream_url])
 
     integration_url = _config['integration.url']
-    if integration_url != None:
-        if run_priv(['git', 'config', 'remote.subdir-integration/' + _subdir + '.url']):
-            run_priv(['git', 'remote', 'add', 'subdir-integration/' + _subdir, integration_url])
-        else:
-            run_priv(['git', 'remote', 'set-url', 'subdir-integration/' + _subdir, integration_url])
+    if run_priv(['git', 'config', 'remote.subdir-integration/' + _subdir + '.url']):
+        run_priv(['git', 'remote', 'add', 'subdir-integration/' + _subdir, integration_url])
+    else:
+        run_priv(['git', 'remote', 'set-url', 'subdir-integration/' + _subdir, integration_url])
+
+    head_refs = '+refs/heads/*:refs/remotes/subdir-integration/' + _subdir + '/*'
+    subdir_refs = '+refs/git-subdir/*:refs/remotes/subdir-integration/' + _subdir + '/git-subdir/*'
+    run_priv(['git', 'config', '--unset-all', 'remote.subdir-integration/' + _subdir + '.fetch'])
+    run_priv(['git', 'config', '--add', 'remote.subdir-integration/' + _subdir + '.fetch', head_refs])
+    run_priv(['git', 'config', '--add', 'remote.subdir-integration/' + _subdir + '.fetch', subdir_refs])
 
 
 def do_fetch():
-
-    update_subdir_remotes()
 
     upstream_url = _config['upstream.url']
     if upstream_url != None:
@@ -372,19 +387,35 @@ def do_commit(integration_ref, commit_description):
     # Index <tree-ish> content into <subdir>/
     run_priv(['git', 'read-tree', '--prefix=' + _subdir + '/', integration_commit])
 
+    # If this isn't the first commit, then restore the previous .git-subdir state
+    run_priv(['git', 'checkout', _subdir_meta])
+
+    if not path.isdir(_subdir_meta):
+        os.mkdir(_subdir_meta)
+        os.mkdir(path.join(_subdir_meta, 'refs'))
+
     with open(_subdir_config, 'w') as fp:
         fp.write(saved_git_subdir)
+
+    commit_uuid = str(uuid.uuid4())
 
     # Make sure .git-subdir changes for each commit by adding a random uuid
     # this is so the log for .git-subdir can be used to identify subdir
     # squash commits
-    subdir_config_set('commit-uuid', str(uuid.uuid4()))
+    subdir_config_set('commit-uuid', commit_uuid)
+
+    with open(path.join(_subdir_meta, 'refs', commit_uuid), 'w') as fp:
+        fp.write(integration_commit)
+
+    # Until the .git-subdir/refs/<uuid> refs get published there's a
+    # risk the integration_commit could be garbage collected...
+    run_priv(['git', 'update-ref', 'refs/git-subdir-local/' + commit_uuid, integration_commit])
 
     # We record what commit we are squashing to allow rebasing
     # future changes on this
     subdir_config_set('integration.ref', integration_commit)
 
-    run_priv(['git', 'add', _subdir_config])
+    run_priv(['git', 'add', '-f', _subdir_meta])
 
     commit_command = ['git', 'commit' ]
     if subdir_args.message != None:
@@ -669,23 +700,32 @@ def push_cmd(args):
 
     do_branch(push_branch)
 
+    git_dir = run_priv_output(['git', 'rev-parse', '--git-dir'])
+
+    push_command = ['git', 'push']
+
     if args.upstream:
         if _config['upstream.url'] == None:
             sys.exit('No upstream configured')
         remote = "subdir-upstream/" + _subdir
         remote_branch = _config['upstream.branch']
+        push_command.extend([remote, push_branch + ':' +  remote_branch])
     else:
         remote = "subdir-integration/" + _subdir
         remote_branch = _config['integration.branch']
+        push_command.extend([remote, push_branch + ':+' +  remote_branch, 'refs/git-subdir/*'])
 
-    push_command = ['git', 'push', remote, push_branch + ':' +  remote_branch]
     if args.dry_run:
         push_command.append('--dry-run')
 
+    run_priv(['ln', '-sfr', path.join(_subdir_meta, 'refs'), path.join(git_dir, 'refs', 'git-subdir')])
+
     run_priv_interactive(push_command)
 
+    run_priv(['rm', '-f', path.join(git_dir, 'refs', 'git-subdir')])
+
     run_priv(['git', 'branch', '-D', push_branch])
-    
+
 
 def do_status():
 
