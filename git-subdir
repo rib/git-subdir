@@ -35,9 +35,20 @@ _subdir = "subdir"
 _subdir_path = "subdir/"
 _subdir_meta = "subdir/.git-subdir"
 _subdir_config = "subdir/.git-subdir/config"
+_worktree_path = "subdir/.git-subdir/worktree"
 _original_branch = None
+_in_worktree = False
+_saved_git_root = None
 
 _config = {}
+
+
+class SubCmdError(Exception):
+    """Exception raised when sub command doesn't behave as expected"""
+
+    def __init__(self, msg):
+        self.msg = msg;
+
 
 def run_priv(args):
 
@@ -157,16 +168,21 @@ def do_init():
 
 
 def move_to_git_root():
+    global _saved_git_root
 
-    root = run_priv_output(['git', 'rev-parse', '--show-toplevel'])
-    os.chdir(root)
+    if _saved_git_root == None:
+        assert(_in_worktree == False)
+        _saved_git_root = run_priv_output(['git', 'rev-parse', '--show-toplevel'])
+
+    os.chdir(_saved_git_root)
 
 
-def validate_subdir_path(subdir_path):
+def setup_global_paths(subdir_path):
     global _subdir_path
     global _subdir_meta
     global _subdir_config
     global _subdir
+    global _worktree_path
 
     if subdir_path != subdir_path.strip():
         sys.exit("Invalid subdir path '" + subdir_path + "' contains leading or trailing white space")
@@ -190,10 +206,12 @@ def validate_subdir_path(subdir_path):
     _subdir_config = path.join(_subdir_meta, 'config')
     _subdir = path.basename(subdir_path)
 
+    _worktree_path = path.join(_subdir_meta, 'worktree')
+
 
 def validate_new_subdir(subdir_path, allow_existing_content=False):
 
-    validate_subdir_path(subdir_path)
+    setup_global_paths(subdir_path)
 
     if allow_existing_content == False and path.exists(_subdir_path):
         sys.exit("Subdir '" + _subdir_path + "' already initialized")
@@ -226,12 +244,14 @@ def load_subdir_config():
 
 def validate_existing_subdir(subdir_path):
 
-    validate_subdir_path(subdir_path)
+    setup_global_paths(subdir_path)
 
     if not path.exists(_subdir_config):
         sys.exit("Subdir '" + _subdir_path + "' not initialized")
 
     load_subdir_config()
+
+    remove_old_worktree()
 
 
 # XXX: without --pre-integrated-commit 'init' is a redundant subcommand
@@ -477,14 +497,54 @@ def clone_cmd(args):
 def find_last_subdir_commit():
     # Identify the last local commit that updated _subdir based on the log
     # of _subdir_config but ignoring url/branch config changes
-    blame = run_priv_output(['git', 'blame', '-p', '-L', '/commit-uuid/,+1', _subdir_config]).splitlines()
+    blame = run_priv_output(['git', 'blame', '-p', '-L', '/commit-uuid/,+1', _original_branch, '--', _subdir_config]).splitlines()
     if blame != "":
         return blame[0].split()[0]
     else:
         return None
 
 
-def do_branch(branch_name, restore_branch=True):
+def remove_old_worktree():
+    assert(_worktree_path != None)
+    assert(_worktree_path != "" and _worktree_path != "." and _worktree_path != '/')
+
+    if path.isdir(_worktree_path):
+        if run_priv(['rm', '-fr', _worktree_path]) != 0:
+            raise SubCmdError('Failed to remove left over worktree')
+        run_priv(['git', 'worktree', 'prune'])
+
+
+def checkout_worktree_branch(branch):
+    global _in_worktree
+
+    if _in_worktree == False:
+        assert(_saved_git_root != None)
+
+        remove_old_worktree()
+
+        if run_priv(['git', 'worktree', 'add', _worktree_path, branch]) != 0:
+            raise SubCmdError("Failed to create temporary worktree")
+
+        os.chdir(_worktree_path)
+
+        _in_worktree = True
+    else:
+        if run_priv(['git', 'checkout', branch]) != 0:
+            raise SubCmdError('Failed to switch to branch ' + branch +
+                              ' in worktree')
+
+
+def leave_worktree():
+    global _in_worktree
+
+    if _in_worktree == False:
+        return
+
+    move_to_git_root()
+    _in_worktree = False
+
+
+def do_branch(branch_name):
 
     assert(branch_name != None)
 
@@ -497,27 +557,33 @@ def do_branch(branch_name, restore_branch=True):
     integration_commit = _config['integration.ref']
     if run_priv(['git', 'rev-list', '-1', integration_commit]) != 0:
         # TODO: print a more detailed error message explaining the problem...
-        sys.exit(".git-subdir:subdir.integration.ref (" + integration_commit + ") not found")
+        raise SubCmdError(".git-subdir:subdir.integration.ref (" +
+                          integration_commit + ") not found")
 
-    last_subdir_commit = find_last_subdir_commit()
+    if subdir_args.last_subdir_commit != None:
+        last_subdir_commit = subdir_args.last_subdir_commit
+    else:
+        last_subdir_commit = find_last_subdir_commit()
+
     if last_subdir_commit == None:
-        sys.exit("Failed to identify last commit that updated the contents of " + _subdir + " squash commit (via `git blame -p -L /commit-uuid/,+1 " + _subdir_config + "')")
+        raise SubCmdError("Failed to identify last commit that updated the contents of " + _subdir + " squash commit (via `git blame -p -L /commit-uuid/,+1 " + _original_branch + " " + _subdir_config + "`)")
 
-    revs = run_priv_output(['git', 'rev-list', last_subdir_commit + "..HEAD", '-1', _subdir]).splitlines()
+    revs = run_priv_output(['git', 'rev-list', last_subdir_commit + ".." + _original_branch, '-1', '--', _subdir]).splitlines()
     if len(revs) != 1:
         # No subdir changes since commit so straight-forward branch:
-        if restore_branch:
-            run_priv(['git', 'branch', branch_name, integration_commit])
-        else:
-            run_priv(['git', 'checkout', '-b', branch_name, integration_commit])
+        run_priv(['git', 'branch', branch_name, integration_commit])
         return
 
     if subdir_args.debug:
         print("last local squash commit = " + last_subdir_commit, file=sys.stderr)
 
-    # Create a temporary branch to rebase onto
-    if run_priv(['git', 'checkout', '-b', base_branch, last_subdir_commit]) != 0:
-        sys.exit("Failed to create temporary rebase branch")
+    if run_priv(['git', 'branch', base_branch, last_subdir_commit]) != 0:
+        raise SubCmdError("Failed to create temporary rebase branch")
+
+    # We want a pristine clean worktree so we know there are no
+    # untracked files which might block us from switching branches
+    #
+    checkout_worktree_branch(base_branch)
 
     # Reset temporary rebase branch to last integration commit
     #
@@ -532,8 +598,7 @@ def do_branch(branch_name, restore_branch=True):
     # directory.
     #
     if run_priv(['git', 'reset', '--soft', integration_commit]) != 0:
-        run_priv(['git', 'checkout', _original_branch])
-        sys.exit("Failed to prepare temporary rebase branch")
+        raise SubCmdError("Failed to prepare temporary rebase branch")
 
     # Squash commit representing diff between upstream (+integration
     # changes) and last subdir/ commit
@@ -542,39 +607,29 @@ def do_branch(branch_name, restore_branch=True):
     # changes that affect subdir/
     #
     if run_priv(['git', 'commit', '-m', "git-subdir/" + _subdir + ": temporary upstream->local layout squash commit"]) != 0:
-        run_priv(['git', 'checkout', _original_branch])
-        sys.exit("Failed to prepare temporary rebase branch")
+        raise SubCmdError("Failed to prepare temporary rebase branch")
 
     # Create branch to filter based on _original_branch
     if run_priv(['git', 'checkout', '-b', branch_name, _original_branch]) != 0:
-        run_priv(['git', 'checkout', _original_branch])
-        sys.exit("Failed to create branch")
+        raise SubCmdError("Failed to create branch")
 
     # Rebase _original_branch onto base_branch, from
     # <last_subdir_commit>
     if run_priv(['git', 'rebase', '--onto', base_branch, last_subdir_commit]) != 0:
-        run_priv(['git', 'checkout', _original_branch])
-        sys.exit("Failed to rebase local changes since last " + _subdir + " integration commit")
+        raise SubCmdError("Failed to rebase local changes since last " + _subdir + " integration commit")
 
     # Delete temporary rebase branch
     if run_priv(['git', 'branch', '-D', base_branch]) != 0:
-        run_priv(['git', 'checkout', _original_branch])
-        sys.exit("Failed to delete temporary rebase branch")
+        raise SubCmdError("Failed to delete temporary rebase branch")
 
     # Apply subdirectory filter on rebased commits
 
     if run_priv(['git', 'filter-branch', '-f', '--subdirectory-filter', _subdir, integration_commit + "..HEAD"]) != 0:
-        run_priv(['git', 'checkout', _original_branch])
-        sys.exit("Failed to filter branch")
+        raise SubCmdError("Failed to filter branch")
 
     # Filter out .git-subdir (all that's left of temporary squash commit)"
     if run_priv(['git', 'filter-branch', '-f', '--index-filter', "git rm --cached --ignore-unmatch -fr .git-subdir", '--prune-empty', integration_commit + "..HEAD"]) != 0:
-        run_priv(['git', 'checkout', _original_branch])
-        sys.exit("Failed to filter out .git-subdir branch")
-
-    # Done
-    if restore_branch:
-        run_priv(['git', 'checkout', _original_branch])
+        raise SubCmdError("Failed to filter out .git-subdir branch")
 
 
 def branch_cmd(args):
@@ -587,7 +642,10 @@ def branch_cmd(args):
         sys.exit("Can't create branch under 'subdir/' namespace")
 
     #do_fetch(require_integration_remote=True)
-    do_branch(args.branch)
+    try:
+        do_branch(args.branch)
+    except SubCmdError as e:
+        sys.exit(e.msg);
 
 
 # TODO: support --continue and maybe interactive rebasing
@@ -616,7 +674,7 @@ def do_rebase():
     integration_commit = _config['integration.ref']
     if run_priv(['git', 'rev-list', '-1', integration_commit]) != 0:
         # TODO: print a more detailed error message explaining the problem...
-        sys.exit(".git-subdir:subdir.integration.ref (" + integration_commit + ") not found")
+        raise SubCmdError(".git-subdir:subdir.integration.ref (" + integration_commit + ") not found")
 
 
     integration_branch = _config['integration.branch']
@@ -627,11 +685,11 @@ def do_rebase():
         local_rebase_onto = run_priv_output(['git', 'rev-parse', subdir_args.onto])
     else:
         if run_priv(['git', 'merge-base', '--is-ancestor', integration_commit, integration_remote]) != 0:
-            sys.exit("integration branch doesn't contain last squashed commit:" +
-                     "\n  " + integration_commit +
-                     "\nUse --onto <base> to specify what to rebase local " +
-                     "\nchanges onto, e.g. if you have manually rebased an " +
-                     "\nintegration branch on the latest upstream")
+            raise SubCmdError("integration branch doesn't contain last squashed commit:" +
+                              "\n  " + integration_commit +
+                              "\nUse --onto <base> to specify what to rebase local " +
+                              "\nchanges onto, e.g. if you have manually rebased an " +
+                              "\nintegration branch on the latest upstream")
 
         local_rebase_onto = integration_remote
 
@@ -643,36 +701,38 @@ def do_rebase():
         if upstream_branch:
             upstream_remote = "subdir-upstream/" + _subdir + "/" + upstream_branch
             if run_priv(['git', 'rev-list', '-1', upstream_remote]) != 0:
-                sys.exit("Upstream remote configured but not able to find " +
-                         "upstream ref to rebase onto")
+                raise SubCmdError("Upstream remote configured but not able to find " +
+                                  "upstream ref to rebase onto")
 
             integration_rebase_branch = rebase_branch_stem + '_integration'
-            if run_priv(['git', 'checkout', '-b',
+
+            if run_priv(['git', 'branch',
                          integration_rebase_branch, integration_remote]) != 0:
-                sys.exit("Failed to create temporary rebase branch from " + integration_remote)
+                raise SubCmdError("Failed to create temporary rebase branch from " + integration_remote)
+
+            checkout_worktree_branch(integration_rebase_branch)
+
             if run_priv(['git', 'rebase', upstream_remote]) != 0:
                 # TODO: support --continue
-                run_priv(['git', 'checkout', _original_branch])
                 run_priv(['git', 'branch', '-D', integration_rebase_branch])
-                sys.exit("Failed to rebase integration branch on upstream")
-
-            run_priv(['git', 'checkout', _original_branch])
+                raise SubCmdError("Failed to rebase integration branch on upstream")
 
             local_rebase_onto = integration_rebase_branch
 
 
     local_rebase_branch = rebase_branch_stem + '_local'
 
-    do_branch(local_rebase_branch, restore_branch=False)
+    do_branch(local_rebase_branch)
+
+    checkout_worktree_branch(local_rebase_branch)
 
     if run_priv(['git', 'rebase', '--onto', local_rebase_onto, integration_commit]) != 0:
         # TODO: support --continue
-        run_priv(['git', 'checkout', _original_branch])
         run_priv(['git', 'branch', '-D', integration_rebase_branch])
         run_priv(['git', 'branch', '-D', local_rebase_branch])
-        sys.exit("After resolving the subdir rebase conflict, run 'git subdir rebase --continue' (TODO)") #TODO
+        raise SubCmdError("After resolving the subdir rebase conflict, run 'git subdir rebase --continue' (TODO)") #TODO
 
-    run_priv(['git', 'checkout', _original_branch])
+    leave_worktree()
 
     do_commit(local_rebase_branch, _subdir + ": rebase")
 
@@ -685,22 +745,21 @@ def rebase_cmd(args):
     initialize_state()
     validate_existing_subdir(args.subdir)
 
-    do_rebase()
+    try:
+        do_rebase()
+    except SubCmdError as e:
+        sys.exit(e.msg);
 
 
-def push_cmd(args):
-
-    initialize_state()
-    validate_existing_subdir(args.subdir)
-
-    update_subdir_remotes()
-
+def do_push(args):
     push_branch = 'subdir/' + _subdir + '/_push'
     run_priv(['git', 'branch', '-D', push_branch])
 
     do_branch(push_branch)
 
-    git_dir = run_priv_output(['git', 'rev-parse', '--git-dir'])
+    leave_worktree()
+
+    git_dir = run_priv_output(['git', 'rev-parse', '--git-common-dir'])
 
     push_command = ['git', 'push']
 
@@ -713,18 +772,41 @@ def push_cmd(args):
     else:
         remote = "subdir-integration/" + _subdir
         remote_branch = _config['integration.branch']
-        push_command.extend([remote, push_branch + ':+' +  remote_branch, 'refs/git-subdir/*'])
+        push_command.extend([remote, '-f', push_branch + ':' +  remote_branch, 'refs/git-subdir-push-tmp/*:refs/git-subdir/*'])
 
     if args.dry_run:
         push_command.append('--dry-run')
 
-    run_priv(['ln', '-sfr', path.join(_subdir_meta, 'refs'), path.join(git_dir, 'refs', 'git-subdir')])
+    # Make sure we don't somehow have packed-refs for refs/git-subdir-push-tmp/...
+    subdir_refs = run_priv_output(['git', 'for-each-ref', '--format="%(refname)"', 'refs/git-subdir-push-tmp']).splitlines()
+
+    if subdir_refs != "":
+        for ref in subdir_refs:
+            run_priv(['git', 'update-ref', '-d', ref])
+
+    if run_priv(['ln', '-sfr', path.join(_subdir_meta, 'refs'),
+                 path.join(git_dir, 'refs', 'git-subdir-push-tmp')]) != 0:
+        raise SubCmdError('Failed to temporarily link ' + _subdir + '/.git-subdir/refs under .git/refs/git-subdir-push-tmp')
 
     run_priv_interactive(push_command)
 
-    run_priv(['rm', '-f', path.join(git_dir, 'refs', 'git-subdir')])
+    if run_priv(['rm', '-f', path.join(git_dir, 'refs', 'git-subdir-push-tmp')]) != 0:
+        raise SubCmdError('Failed to remove temporary .git/refs/git-subdir link')
 
     run_priv(['git', 'branch', '-D', push_branch])
+
+
+def push_cmd(args):
+
+    initialize_state()
+    validate_existing_subdir(args.subdir)
+
+    update_subdir_remotes()
+
+    try:
+        do_push(args)
+    except SubCmdError as e:
+        sys.exit(e.msg);
 
 
 def do_status():
@@ -799,7 +881,7 @@ def do_status():
         last_subdir_commit = find_last_subdir_commit()
 
         if last_subdir_commit != None:
-            revs = run_priv_output(['git', 'rev-list', last_subdir_commit + "..HEAD", '-1', _subdir]).splitlines()
+            revs = run_priv_output(['git', 'rev-list', last_subdir_commit + "..HEAD", '-1', '--', _subdir]).splitlines()
             print("last local commit updating subdir = " + last_subdir_commit, file=sys.stderr)
 
             if len(revs) != 1:
