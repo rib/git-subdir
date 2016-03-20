@@ -201,8 +201,8 @@ class TestSubdir(unittest.TestCase):
         """Cloning without specifying an integration repo is an error."""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
         self.assertEqual(shell('git subdir clone'), 2)
-        self.assertEqual(shell('git subdir clone ./foo'), 1)
-        self.assertEqual(shell('git subdir clone --upstream ../subdir_upstream --message "add subdir" ./foo'), 1)
+        self.assertEqual(shell('git subdir clone ./foo'), 2)
+        self.assertEqual(shell('git subdir clone --upstream ../subdir_upstream --message "add subdir" ./foo'), 2)
 
 
     def test_clone_with_integration_only(self):
