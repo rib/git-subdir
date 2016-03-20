@@ -908,6 +908,7 @@ if __name__ == '__main__':
     branch_parser = subparsers.add_parser('branch')
     branch_parser.add_argument('-b', "--branch", required=True)
     branch_parser.add_argument("-v", "--verbose", action="store_true")
+    branch_parser.add_argument("--last-subdir-commit", help=argparse.SUPPRESS)
     branch_parser.add_argument("subdir", nargs='?', default=".")
     branch_parser.set_defaults(func=branch_cmd)
 
@@ -916,6 +917,7 @@ if __name__ == '__main__':
     rebase_parser.add_argument("-v", "--verbose", action="store_true")
     rebase_parser.add_argument("-l", "--local", action="store_true")
     rebase_parser.add_argument("-m", "--message")
+    rebase_parser.add_argument("--last-subdir-commit", help=argparse.SUPPRESS)
     rebase_parser.add_argument("--onto")
     #FIXME -p, --preserve-merges, -s, --strategy
     rebase_parser.add_argument("subdir", nargs='?', default=".")
@@ -969,6 +971,9 @@ if __name__ == '__main__':
     # only valid with init cmd, but expected by do_init()...
     if not "pre_integrated_commit" in subdir_args:
         setattr(subdir_args, 'pre_integrated_commit', None)
+
+    if not "last_subdir_commit" in subdir_args:
+        setattr(subdir_args, 'last_subdir_commit', None)
 
     subdir_args.func(subdir_args)
 
