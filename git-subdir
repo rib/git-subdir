@@ -47,7 +47,7 @@ class SubCmdError(Exception):
     """Exception raised when sub command doesn't behave as expected"""
 
     def __init__(self, msg):
-        self.msg = msg;
+        self.msg = "Spurious Sub Command Error: " + msg;
 
 
 def run_priv(args):
