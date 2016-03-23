@@ -157,7 +157,6 @@ class TestSubdir(unittest.TestCase):
 
 
     def tearDown(self):
-        return
         os.chdir(self.topdir)
         if path.isdir(self.testdir) and path.isdir(path.join(self.testdir, 'container_repo')):
             shutil.rmtree(self.testdir)
