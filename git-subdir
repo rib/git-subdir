@@ -495,6 +495,10 @@ def clone_cmd(args):
 
 
 def find_last_subdir_commit():
+    revs = run_priv_output(['git', 'rev-list', '-1', _original_branch, '--', _subdir_config]).splitlines()
+    if len(revs) < 1:
+        return None
+
     # Identify the last local commit that updated _subdir based on the log
     # of _subdir_config but ignoring url/branch config changes
     blame = run_priv_output(['git', 'blame', '-p', '-L', '/commit-uuid/,+1', _original_branch, '--', _subdir_config]).splitlines()
