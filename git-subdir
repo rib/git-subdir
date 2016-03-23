@@ -788,7 +788,7 @@ def do_push(args):
         for ref in subdir_refs:
             run_priv(['git', 'update-ref', '-d', ref])
 
-    if run_priv(['ln', '-sfr', path.join(_subdir_meta, 'refs'),
+    if run_priv(['ln', '-sf', path.abspath(path.join(_subdir_meta, 'refs')),
                  path.join(git_dir, 'refs', 'git-subdir-push-tmp')]) != 0:
         raise SubCmdError('Failed to temporarily link ' + _subdir + '/.git-subdir/refs under .git/refs/git-subdir-push-tmp')
 
