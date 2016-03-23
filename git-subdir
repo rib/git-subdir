@@ -273,7 +273,7 @@ def init_cmd(args):
     do_init()
 
     if not args.quiet:
-        print("Intialized " + _subdir_path + " Subdir")
+        print("Initialized " + _subdir_path + " Subdir")
         do_status()
 
 
