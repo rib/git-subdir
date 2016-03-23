@@ -891,7 +891,7 @@ def do_status():
             if len(revs) != 1:
                 print("No " + _subdir + " changes since last squash commit", file=sys.stderr)
         else:
-            print("Failed to identify last " + _subdir + "squash commit via `git blame -p -L /commit-uuid/,+1 " + _subdir_config + "'", file=sys.stderr)
+            print("Failed to identify last " + _subdir + " squash commit via `git blame -p -L /commit-uuid/,+1 " + _subdir_config + "'", file=sys.stderr)
 
 
 def status_cmd(args):
