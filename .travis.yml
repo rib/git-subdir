@@ -1,0 +1,23 @@
+sudo: false
+
+language: python
+python:
+    - "3.3"
+
+os:
+    - linux
+
+addons:
+    apt:
+        sources:
+            - git-core
+        packages:
+            - git
+
+script:
+    - git --version
+    - git config --global user.email "travis@travis-ci.org"
+    - git config --global user.name "Travis CI"
+    - export PATH=$PWD:$PATH
+    - export MANPATH=$PWD:$MANPATH
+    - ./tests.py
