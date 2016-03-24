@@ -10,10 +10,10 @@ git-subdir - Integrate the content of a repository into a subdirectory
 SYNOPSIS
 --------
 [verse]
-'git subdir init' [-b <branch>] [--upstream-branch <branch>] <repository> [<upstream-repository] <subdir>
+'git subdir init' [-b <branch>] [--upstream-branch <branch>] <repository> [<upstream-repo] <subdir>
 'git subdir fetch' [<subdir>...]
 'git subdir commit'[-m <message] [--dry-run] <commit> [<subdir>]
-'git subdir clone' [-b <branch>] [--upstream-branch <branch>] <repository> [<upstream-repository>] <subdir>
+'git subdir clone' [-b <branch>] [--upstream-branch <branch>] <repository> [<upstream-repo>] <subdir>
 'git subdir branch' [-b branch] [<subdir>]
 'git subdir rebase' [<subdir>]
 'git subdir push' [--upstream] [--dry-run] [<subdir>]
@@ -27,7 +27,7 @@ DESCRIPTION
 
 Local changes to the subdirectory can be filtered onto a branch and pushed back upstream. Long lived integration changes (such as to integrate an external project into your build system) are maintained on a branch and rebased each time you sync with the latest upstream.
 
-Developers cloning your project don't need know about or use 'git subdir' as the integration is done via commits to the subdirectory that squash in the result of rebasing your integration changes on the latest upstream.
+Developers can clone your project and freely commit changes to subdirectories without needing to know about or use 'git subdir' which can be considered a project maintainer's tool; only needed when re-syncing a subdirectory's content with upstream.
 
 COMMANDS
 --------
@@ -43,11 +43,13 @@ init
 		<repository> [<upstream-repository] <subdir>
 'git subdir init_from_subrepo' [--as-upstream] <subdir>
 
-Creates a <subdir>/ directory containing a .git-subdir file with a record of what repository to integrate and track for changes as well as (optionally) an upstream repository to monitor.
+Creates a <subdir>/ directory containing a .git-subdir/config file with a record of what repository to use for maintaining integration changes (in their upstream layout) as well as (optionally) an upstream repository to monitor.
 
-The benefit of specifying a second, upstream repository is that if you need to maintain a set of integration patches for the first <repository>, specific to your project (such as build system integration changes) then git-subdir can help rebase those changes on new upstream changes.
+The integration <repository> would typically be a project-specific fork of some upstream repository.
 
-Typically <subdir> wouldn't exist before running 'git subdir init', but it's also possible to create a .git-subdir file for a pre-existing subdirectory (in which case --pre-integrated-commit must be passed to identify a commit from <repository> that the subdirectory contents currently correspond to).
+The benefit of specifying a second, upstream repository is that 'git subdir rebase' can streamline rebasing any project-specific <subdir> changes onto the latest upstream changes.
+
+Typically <subdir> wouldn't exist before running 'git subdir init', but it's also possible to create a .git-subdir/config file for a pre-existing subdirectory (in which case --pre-integrated-commit must be passed to identify a commit from <repository> that the subdirectory's content currently corresponds to).
 
 The 'init_from_subrepo' command does much the same same as 'init' but reads the <repository> and <branch> from <subrepo>/.git-config
 
@@ -94,7 +96,7 @@ Replaces the contents of <subdir> with the contents of <commit> in a single squa
 
 If the <commit> is not an upstream commit it should then be pushed to the remote integration branch for others to be able to rebase your project-specific changes onto different upstream versions. Running 'git subdir status' will try to warn when the last squashed <commit> doesn't appear to have been published for others.
 
-Note: it's ok to rebase these squash commits on a topic branch without confusing git-subdir, but it's recommended to avoid squashing extra changes to <subdir> into these commits, otherwise when using 'git subdir branch' you will see a poorly named patch to represent them.
+Note: it's ok to rebase these squash commits on a topic branch without confusing 'git subdir', but it's recommended to avoid squashing extra changes within <subdir> into these commits, otherwise if you later use 'git subdir branch' you will see these extra changes split back out into a separate, poorly named patch.
 
 clone
 ~~~~~
@@ -129,7 +131,7 @@ This is a convenience for the following steps:
 
 1. Running 'git subdir fetch'
 2. Running 'git subdir branch' to filter local <subdir> changes onto a branch based on your last subdirectory squash commit
-3. Running 'git rebase' to rebasing that branch on the latest upstream or integration branch
+3. Running 'git rebase' to rebase that branch on the latest upstream or integration branch
 4. Running 'git subdir commit' to squash the result back into your current branch
 
 status
@@ -168,9 +170,9 @@ The first thing to decide is where to maintain an 'integration' branch for any c
 Lets assume you don't have privileges to touch the 'upstream/duper' repo so you start by forking it and create https://github.com/user/duper. We'll leave the master branch of this repo alone and create a 'super-integration' branch that we can push to https://github.com/user/duper.
 
   $ cd super/
-  $ git subdir clone -b super-integration http://github.com/user/duper http://github.com/upstream/duper
+  $ git subdir clone -b super-integration http://github.com/user/duper http://github.com/upstream/duper duper/
 
-Now make a local changes to the duper/ subdirectory...
+Now make a local change to the duper/ subdirectory...
 
   $ echo "foo" > duper/file.txt
   $ git commit -m 'change file' duper/file.txt
@@ -185,7 +187,7 @@ If you run 'git subdir status duper' now you will see a warning.
 
 As part of this rebase your local change was rebased on upstream and 'git subdir status' is reminding you to push the rebased branch as your latest super-integration branch.
 
-Also every time a subdirectory is updated (either via a commit or a rebase) then 'git subdir' also creates a 'ref' for the commit whose content is used to update a subdirectory so that the commit can always be used as a base for later 'git subdir' commands. In addition to the integration branch, these refs should also be published for other project maintainers that may want to use 'git subdir' too.
+Every time a subdirectory is updated (either via a commit or a rebase) then 'git subdir' also creates a 'ref' for the commit whose content is used to update a subdirectory so that the commit can always be used as a base for later 'git subdir' commands. In addition to the integration branch, these refs should be published for other project maintainers too.
 
 'git subdir push' will push your integration branch (super-integration) and commit refs to your configured integration repo:
 
@@ -195,28 +197,28 @@ Also every time a subdirectory is updated (either via a commit or a rebase) then
 CONFIGURATION
 -------------
 
-git-subdir maintains the configuration for a subdirectory in a .git-subdir file which is tracked as part of your repository history. These files are compatible with 'git config -f .git-subdir' and it's safe to modify (and commit) changes to .git-subdir files with the exception that the 'commit-uuid' line should not be touched since that will interfere with git-subdir identifying the changes that update the subdir contents.
+'git subdir' maintains the configuration for a subdirectory in a .git-subdir/config file which is tracked as part of your repository history. These files are compatible with 'git config -f .git-subdir/config' and it's safe to modify (and commit) changes to .git-subdir/config files with the exception that the 'commit-uuid' line should not be touched since that will interfere with 'git subdir' identifying the changes that update the subdir contents.
 
-git-subdir will create 'subdir-upstream/<subdir>' and 'subdir-integration/<subdir>' remotes in $GIT_DIR/ but git-subdir never assumes these exist and they are always updated before use based on the current .git-subdir configuration.
+'git subdir' will create 'subdir-upstream/<subdir>' and 'subdir-integration/<subdir>' remotes in $GIT_DIR/ but never assumes these exist and always updates them before use based on the current .git-subdir configuration.
 
 COMPARED TO SIMILAR TOOLS
 -------------------------
 
-git-subdir serves a similar purpose to git-submodule(1), git-subtree(1) and git-subrepo(1) so here are a few notes to help distinguish the tools.
+'git subdir' serves a similar purpose to git-submodule(1), git-subtree(1) and git-subrepo(1) so here are a few notes to help distinguish the tools.
 
-git-submodule;;
-- Developers cloning a repo that uses git-subdir don't need to know about or use git-subdir.
-- git-subdir incorporates external content via squash commits that themselves don't retain any history of the external project whereas git-submodule works as an assistant for cloning external git repositories within subdirectories of your project.
+'git submodule';;
+- Developers cloning a repo that uses 'git subdir' don't need to know about or use 'git subdir'.
+- 'git subdir' incorporates external content via squash commits that themselves don't retain any history of the external project whereas 'git submodule' works as an assistant for cloning external git repositories within subdirectories of your project.
 
-git-subtree;;
-- git-subtree isn't designed to facilitate rebasing integration changes for an external repository and is generally geared around using merge commits to sync with upstream. For long lived integration changes, this may mean dealing with with conflicts without the original context of the changes when merging.
-- Similarly git-subtree doesn't have provisions for rebasing local, upstreamable changes.
+'git subtree';;
+- 'git subtree' isn't designed to facilitate rebasing integration changes for an external repository and is generally geared around using merge commits to sync with upstream. For long lived integration changes, this may mean dealing with with conflicts without the original context of the changes when merging.
+- Similarly 'git subtree' doesn't have provisions for rebasing local, upstreamable changes.
 
-git-subrepo;;
-- The initial inspiration for git-subdir.
-- git-subdir takes a different approach to branching by rebasing and filtering local changes onto an upstream commit to ease upstreaming those local changes.
-- By differentiating an integration branch from an upstream branch git-subdir can further streamline the process of upstreaming some changes while maintaining other integration changes private to your project.
-- The use of an integration branch avoids loosing track of local subdirectory changes behind the squash commits used to pull in upstream changes.
+'git subrepo';;
+- The initial inspiration for 'git subdir'.
+- 'git subdir' takes a different approach to branching by rebasing and filtering local changes onto an upstream commit to ease upstreaming those local changes.
+- By differentiating an integration branch from an upstream branch 'git subdir' can further streamline the process of upstreaming some changes while maintaining other integration changes private to your project.
+- The use of an integration branch and saving the refs for what content is committed to a subdirectory avoids loosing track of individual changes behind the squash commits used to pull in upstream changes.
 
 
 LICENSE
