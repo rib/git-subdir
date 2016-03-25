@@ -508,10 +508,24 @@ def find_last_subdir_commit():
         return None
 
 
+def leave_worktree():
+    global _in_worktree
+
+    if _in_worktree == False:
+        return
+
+    move_to_git_root()
+    _in_worktree = False
+
+
+
 def remove_old_worktree():
     assert(_worktree_path != None)
     assert(_worktree_path != "" and _worktree_path != "." and _worktree_path != '/')
 
+    leave_worktree()
+
+    print("old worktree = " + _worktree_path)
     if path.isdir(_worktree_path):
         if run_priv(['rm', '-fr', _worktree_path]) != 0:
             raise SubCmdError('Failed to remove left over worktree')
@@ -536,16 +550,6 @@ def checkout_worktree_branch(branch):
         if run_priv(['git', 'checkout', branch]) != 0:
             raise SubCmdError('Failed to switch to branch ' + branch +
                               ' in worktree')
-
-
-def leave_worktree():
-    global _in_worktree
-
-    if _in_worktree == False:
-        return
-
-    move_to_git_root()
-    _in_worktree = False
 
 
 def do_branch(branch_name):
@@ -649,6 +653,9 @@ def branch_cmd(args):
         do_branch(args.branch)
     except SubCmdError as e:
         sys.exit(e.msg);
+    finally:
+        remove_old_worktree()
+        print("FINALLY")
 
 
 # TODO: support --continue and maybe interactive rebasing
@@ -752,6 +759,8 @@ def rebase_cmd(args):
         do_rebase()
     except SubCmdError as e:
         sys.exit(e.msg);
+    finally:
+        remove_old_worktree()
 
 
 def do_push(args):
@@ -810,6 +819,8 @@ def push_cmd(args):
         do_push(args)
     except SubCmdError as e:
         sys.exit(e.msg);
+    finally:
+        remove_old_worktree()
 
 
 def do_status():
