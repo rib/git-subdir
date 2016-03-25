@@ -640,7 +640,6 @@ def branch_cmd(args):
 
     initialize_state()
     validate_existing_subdir(args.subdir)
-    check_clean_subdir()
 
     if args.branch[:7] == "subdir/":
         sys.exit("Can't create branch under 'subdir/' namespace")
