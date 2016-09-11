@@ -277,42 +277,6 @@ def init_cmd(args):
         do_status()
 
 
-def init_from_subrepo_cmd(args):
-
-    initialize_state()
-
-    validate_new_subdir(args.subdir, allow_existing_content=True)
-
-    repo_config = path.join(_subdir, '.gitrepo')
-    if not path.exists(repo_config):
-        sys.exit("No git-subrepo (" + repo_config + ") config found")
-
-    setattr(subdir_args, 'repository', None)
-    setattr(subdir_args, 'branch', None)
-    setattr(subdir_args, 'upstream', None)
-    setattr(subdir_args, 'upstream_branch', None)
-
-    repository = run_priv_output(['git', 'config', '-f', repo_config, "subrepo.remote"])
-    branch = run_priv_output(['git', 'config', '-f', repo_config, "subrepo.branch"])
-
-    subdir_args.repository = repository;
-    subdir_args.branch = branch;
-
-    if subdir_args.as_upstream:
-        subdir_args.upstream = repository;
-        subdir_args.upstream_branch = branch;
-
-    pre_integrated_commit = run_priv_output(['git', 'config', '-f', repo_config, "subrepo.commit"])
-    if subdir_args.pre_integrated_commit == None:
-        subdir_args.pre_integrated_commit = pre_integrated_commit
-
-    do_init()
-
-    if not args.quiet:
-        print("Intialized " + _subdir + " Subdir")
-        do_status()
-
-
 def git_fetch(remote):
 
     update_subdir_remotes()
@@ -966,12 +930,6 @@ if __name__ == '__main__':
     init_parser.add_argument("upstream_repository", nargs='?', default=None, help="An optional upstream to monitor")
     init_parser.add_argument("subdir")
     init_parser.set_defaults(func=init_cmd)
-
-    init_sr_parser = subparsers.add_parser('init_from_subrepo')
-    init_sr_parser.add_argument("-q", "--quiet", action="store_true")
-    init_sr_parser.add_argument("--as-upstream", action="store_true", help="Consider the git-subrepo remote url to be the upstream and integration repository")
-    init_sr_parser.add_argument("subdir")
-    init_sr_parser.set_defaults(func=init_from_subrepo_cmd)
 
     fetch_parser = subparsers.add_parser('fetch')
     fetch_parser.add_argument("-q", "--quiet", action="store_true")

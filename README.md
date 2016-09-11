@@ -31,7 +31,6 @@ init
 >     git subdir init [-b <branch>] [--upstream-branch <branch>]
 >                     --pre-integrated-commit CORRESPONDING_COMMIT
 >                     <repository> [<upstream-repository] <subdir>
->     git subdir init_from_subrepo [--as-upstream] <subdir>
 
 Creates a &lt;subdir&gt;/ directory containing a .git-subdir/config file with a record of what repository to use for maintaining integration changes (in their upstream layout) as well as (optionally) an upstream repository to monitor.
 
@@ -40,8 +39,6 @@ The integration &lt;repository&gt; would typically be a project-specific fork of
 The benefit of specifying a second, upstream repository is that *git subdir rebase* can streamline rebasing any project-specific &lt;subdir&gt; changes onto the latest upstream changes.
 
 Typically &lt;subdir&gt; wouldn’t exist before running *git subdir init*, but it’s also possible to create a .git-subdir/config file for a pre-existing subdirectory (in which case --pre-integrated-commit must be passed to identify a commit from &lt;repository&gt; that the subdirectory’s content currently corresponds to).
-
-The *init\_from\_subrepo* command does much the same same as *init* but reads the &lt;repository&gt; and &lt;branch&gt; from &lt;subrepo&gt;/.git-config
 
 ### options
 
