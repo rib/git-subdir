@@ -7,7 +7,7 @@ import os
 import os.path as path
 import io
 
-debug = True
+debug = False
 
 # TODO:
 #
@@ -36,7 +36,7 @@ debug = True
 #
 # if we decided to keep the git subdir init cmd (arguably useful for
 # --pre-integrated-commit option) then it could be good to test a
-# manual clone, in terms of 'init', 'fetch' + 'commit'
+# manual add, in terms of 'init', 'fetch' + 'commit'
 #
 # test git subdir rebase --onto
 #
@@ -162,62 +162,28 @@ class TestSubdir(unittest.TestCase):
             shutil.rmtree(self.testdir)
 
 
-    def test_init_no_repo(self):
-        """Initialize without specifying an integration repo is an error."""
-        self.assertEqual(shell('git subdir init'), 2)
-        self.assertEqual(shell('git subdir init ./foo'), 2)
-        self.assertEqual(shell('git subdir init --upstream http://foo foo'), 2)
-
-
-    def test_init_with_integration_only(self):
-        """Initialize with just integration repo."""
-        os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir init http://foo foo'), 0)
-        self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.integration.url'), "http://foo")
-        self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.upstream.url'), "")
-
-
-    def test_init_with_integration_and_upstream(self):
-        """Initialize with integration and upstream repos."""
-        os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir init http://integration --upstream http://upstream foo'), 0)
-        self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.integration.url'),
-                         "http://integration")
-        self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.upstream.url'),
-                         "http://upstream")
-
-
-    def test_init_repeat(self):
-        """Attempting to init an existing subdir should fail."""
-        os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir init http://foo foo'), 0)
-        self.assertEqual(shell('git subdir init --upstream http://foo2 http://foo foo'), 1)
-        self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.integration.url'), "http://foo")
-        self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.upstream.url'), "")
-
-
-    def test_clone_no_repo(self):
+    def test_add_no_repo(self):
         """Cloning without specifying an integration repo is an error."""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone'), 2)
-        self.assertEqual(shell('git subdir clone ./foo'), 2)
-        self.assertEqual(shell('git subdir clone --upstream ../subdir_upstream --message "add subdir" ./foo'), 2)
+        self.assertEqual(shell('git subdir add'), 2)
+        self.assertEqual(shell('git subdir add ./foo'), 2)
+        self.assertEqual(shell('git subdir add --upstream ../subdir_upstream --message "add subdir" ./foo'), 2)
 
 
-    def test_clone_with_integration_only(self):
-        """Clone with just integration repo."""
+    def test_add_with_integration_only(self):
+        """Add with just integration repo."""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone ../subdir_integration --message "add subdir" ./foo'), 0)
+        self.assertEqual(shell('git subdir add ../subdir_integration --message "add subdir" ./foo'), 0)
         self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.integration.url'), "../subdir_integration")
         self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.upstream.url'), "")
 
         self.assertTrue(self.file_contains('foo/sub-file.txt', 'sub line 2'))
 
 
-    def test_clone_with_integration_and_upstream(self):
-        """Clone with integration and upstream repos."""
+    def test_add_with_integration_and_upstream(self):
+        """Add with integration and upstream repos."""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone ../subdir_integration --upstream ../subdir_upstream --message "add subdir" foo'), 0)
+        self.assertEqual(shell('git subdir add ../subdir_integration --upstream ../subdir_upstream --message "add subdir" foo'), 0)
         self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.integration.url'),
                          "../subdir_integration")
         self.assertEqual(shell_output('git config -f foo/.git-subdir/config subdir.upstream.url'),
@@ -227,11 +193,11 @@ class TestSubdir(unittest.TestCase):
         self.assertFalse(self.file_contains('foo/sub-file.txt', 'upstream diverge 1'))
 
 
-    def test_clone_repeat(self):
-        """Attempting to clone an existing subdir should fail."""
+    def test_add_repeat(self):
+        """Attempting to add an existing subdir should fail."""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone --message "add subdir" ../subdir_integration ./subdir'), 0)
-        self.assertEqual(shell('git subdir clone --message "add subdir" ../subdir_integration ../subdir_upstream ./subdir'), 1)
+        self.assertEqual(shell('git subdir add --message "add subdir" ../subdir_integration ./subdir'), 0)
+        self.assertEqual(shell('git subdir add --message "add subdir" ../subdir_integration ../subdir_upstream ./subdir'), 1)
         self.assertEqual(shell_output('git config -f subdir/.git-subdir/config subdir.integration.url'), "../subdir_integration")
         self.assertEqual(shell_output('git config -f subdir/.git-subdir/config subdir.upstream.url'), "")
 
@@ -239,7 +205,7 @@ class TestSubdir(unittest.TestCase):
     def test_branch(self):
         """Verify branch of unmodified subdir matches original upstream."""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir --debug clone ../subdir_integration --message "add subdir" ./foo'), 0)
+        self.assertEqual(shell('git subdir --debug add ../subdir_integration --message "add subdir" ./foo'), 0)
         self.assertEqual(shell('git subdir --debug branch -b test-branch ./foo'), 0)
 
         hash0 = shell_output('git rev-parse subdir-integration/foo/master')
@@ -250,7 +216,7 @@ class TestSubdir(unittest.TestCase):
     def test_branch_local_change(self):
         """Verify branching of subdir with one local change."""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone ../subdir_integration --message "add subdir" ./foo'), 0)
+        self.assertEqual(shell('git subdir add ../subdir_integration --message "add subdir" ./foo'), 0)
 
         self.commit_append('container_repo', 'foo/sub-file.txt', 'local sub line 3')
 
@@ -272,7 +238,7 @@ class TestSubdir(unittest.TestCase):
         interleaved.
         """
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone ../subdir_integration --message "add subdir" ./foo'), 0)
+        self.assertEqual(shell('git subdir add ../subdir_integration --message "add subdir" ./foo'), 0)
 
         self.commit_append('container_repo', 'foo/sub-file.txt', 'local sub line 3')
         self.commit_append('container_repo', 'other.txt', 'other line 1')
@@ -307,7 +273,7 @@ class TestSubdir(unittest.TestCase):
         """tests rebasing local subdir changes on upstream changes since
         last squash commit"""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone ../subdir_integration --message "add subdir" ./foo'), 0)
+        self.assertEqual(shell('git subdir add ../subdir_integration --message "add subdir" ./foo'), 0)
 
         self.commit_append('container_repo', 'foo/sub-file.txt', 'local sub line 3')
         self.commit_append('container_repo', 'other.txt', 'other line 1')
@@ -332,7 +298,7 @@ class TestSubdir(unittest.TestCase):
         """tests rebasing local subdir changes on integration changes and
         rebasing those on the upstream changes since last squash commit"""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir clone ../subdir_integration --upstream ../subdir_upstream --message "add subdir" ./foo'), 0)
+        self.assertEqual(shell('git subdir add ../subdir_integration --upstream ../subdir_upstream --message "add subdir" ./foo'), 0)
 
         self.commit_append('container_repo', 'foo/sub-file.txt', 'local sub line 3')
         self.commit_append('container_repo', 'other.txt', 'other line 1')

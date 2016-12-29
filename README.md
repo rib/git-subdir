@@ -1,10 +1,9 @@
 Travis CI: [![Build Status](https://travis-ci.org/rib/git-subdir.svg?branch=master)](https://travis-ci.org/rib/git-subdir)
 
 Integrate the content of a repository into a subdirectory
->     git subdir init [-b <branch>] [--upstream-branch <branch>] <repository> [<upstream-repo] <subdir>
+>     git subdir add [-b <branch>] [--upstream-branch <branch>] <repository> [<upstream-repo>] <subdir>
 >     git subdir fetch [<subdir>…]
 >     git subdir commit[-m <message] [--dry-run] <commit> [<subdir>]
->     git subdir clone [-b <branch>] [--upstream-branch <branch>] <repository> [<upstream-repo>] <subdir>
 >     git subdir branch [-b branch] [<subdir>]
 >     git subdir rebase [<subdir>]
 >     git subdir push [--upstream] [--dry-run] [<subdir>]
@@ -23,22 +22,22 @@ Developers can clone your project and freely commit changes to subdirectories wi
 COMMANDS
 ========
 
-init
-----
+add
+---
 
->     git subdir init [-b <branch>] [--upstream-branch <branch>]
->                     <repository> [<upstream-repository] <subdir>
->     git subdir init [-b <branch>] [--upstream-branch <branch>]
->                     --pre-integrated-commit CORRESPONDING_COMMIT
+>     git subdir add [-b <branch>] [--upstream-branch <branch>] [-m <msg>]
+>                     [--pre-integrated-commit CORRESPONDING_COMMIT]
 >                     <repository> [<upstream-repository] <subdir>
 
-Creates a &lt;subdir&gt;/ directory containing a .git-subdir/config file with a record of what repository to use for maintaining integration changes (in their upstream layout) as well as (optionally) an upstream repository to monitor.
+Creates a &lt;subdir&gt;/ directory containing a .git-subdir/config file with a record of the corresponsing remote &lt;repository&gt; as well as (optionally) an upstream repository to monitor.
 
-The integration &lt;repository&gt; would typically be a project-specific fork of some upstream repository.
+The &lt;repository&gt; would typically be a project-specific fork of an upstream repository and is referred to as the *integration* repository.
 
-The benefit of specifying a second, upstream repository is that *git subdir rebase* can streamline rebasing any project-specific &lt;subdir&gt; changes onto the latest upstream changes.
+The benefit of specifying a second, upstream repository is that *git subdir update* can streamline rebasing any project-specific &lt;subdir&gt; changes onto the latest upstream changes.
 
-Typically &lt;subdir&gt; wouldn’t exist before running *git subdir init*, but it’s also possible to create a .git-subdir/config file for a pre-existing subdirectory (in which case --pre-integrated-commit must be passed to identify a commit from &lt;repository&gt; that the subdirectory’s content currently corresponds to).
+Typically &lt;subdir&gt; wouldn’t exist before running *git subdir add*, but it’s also possible to create a .git-subdir/config file for a pre-existing subdirectory (in which case --pre-integrated-commit must be passed to identify a commit from &lt;repository&gt; that the subdirectory’s content currently corresponds to).
+
+The initial &lt;subdir&gt; content will come from the &lt;repository&gt; branch if it already exists otherwise it will come from the &lt;upstream-repository&gt;.
 
 ### options
 
@@ -49,7 +48,7 @@ Pass --quiet to *git subdir fetch* to silence other internally used git commands
 Be verbose.
 
 -b; --branch  
-The branch to fetch and optionally maintain integration changes on. By default this is *master*
+The branch to fetch and maintain integration changes on. By default this is *master*
 
 --upstream-branch  
 If an &lt;upstream-repository&gt; has been specified then it’s also possible to specify which upstream branch to monitor. By default this is *master*
@@ -79,16 +78,6 @@ Replaces the contents of &lt;subdir&gt; with the contents of &lt;commit&gt; in a
 If the &lt;commit&gt; is not an upstream commit it should then be pushed to the remote integration branch for others to be able to rebase your project-specific changes onto different upstream versions. Running *git subdir status* will try to warn when the last squashed &lt;commit&gt; doesn’t appear to have been published for others.
 
 Note: it’s ok to rebase these squash commits on a topic branch without confusing *git subdir*, but it’s recommended to avoid squashing extra changes within &lt;subdir&gt; into these commits, otherwise if you later use *git subdir branch* you will see these extra changes split back out into a separate, poorly named patch.
-
-clone
------
-
->     git subdir clone [-b <branch>] [--upstream-branch <branch>] [-m <msg>]
->                     <repository> [<upstream-repository] <subdir>
-
-This is a convenience to *init*, *fetch* and *commit* an external repository to &lt;subdir&gt;
-
-The initial &lt;subdir&gt; content will come from the integration &lt;repository&gt; branch if it already exists otherwise it will come from the &lt;upstream-repository&gt;.
 
 branch
 ------
@@ -148,7 +137,7 @@ The first thing to decide is where to maintain an *integration* branch for any c
 Lets assume you don’t have privileges to touch the *upstream/duper* repo so you start by forking it and create <https://github.com/user/duper>. We’ll leave the master branch of this repo alone and create a *super-integration* branch that we can push to <https://github.com/user/duper>.
 
     $ cd super/
-    $ git subdir clone -b super-integration http://github.com/user/duper http://github.com/upstream/duper duper/
+    $ git subdir add -b super-integration http://github.com/user/duper http://github.com/upstream/duper duper/
 
 Now make a local change to the duper/ subdirectory…
 

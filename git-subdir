@@ -432,7 +432,7 @@ def commit_cmd(args):
     do_commit(integration_commit, commit_description)
 
 
-def clone_cmd(args):
+def add_cmd(args):
 
     initialize_state()
     validate_new_subdir(args.subdir)
@@ -920,16 +920,23 @@ if __name__ == '__main__':
 
     subparsers = parser.add_subparsers()
 
-    init_parser = subparsers.add_parser('init')
-    init_parser.add_argument("-q", "--quiet", action="store_true")
-    init_parser.add_argument('-b', "--branch", help="The branch to maintain integration changes on")
-    init_parser.add_argument("--upstream", help="An optional upstream repository to monitor")
-    init_parser.add_argument("--upstream-branch", help="An optional upstream branch to monitor")
-    init_parser.add_argument("--pre-integrated-commit", required=False, help="A remote commit ID that the pre-existing subdirectory contents correspond to")
-    init_parser.add_argument("repository", help="The repository to maintain integration changes in")
-    init_parser.add_argument("upstream_repository", nargs='?', default=None, help="An optional upstream to monitor")
-    init_parser.add_argument("subdir")
-    init_parser.set_defaults(func=init_cmd)
+    add_parser = subparsers.add_parser('add')
+    add_parser.add_argument("-q", "--quiet", action="store_true")
+    add_parser.add_argument("-v", "--verbose", action="store_true")
+    add_parser.add_argument('-b', "--branch", help="The branch to maintain integration changes on")
+    add_parser.add_argument("--progress", action="store_true")
+    add_parser.add_argument("--upstream", help="An optional upstream repository to monitor")
+    add_parser.add_argument("--upstream-branch", help="An optional upstream branch to monitor")
+    add_parser.add_argument("--pre-integrated-commit", required=False, help="A remote commit ID that the pre-existing subdirectory contents correspond to")
+    add_parser.add_argument("-m", "--message")
+    add_parser.add_argument("repository", help="The repository to maintain integration changes in")
+    add_parser.add_argument("upstream_repository", nargs='?', default=None, help="An optional upstream to monitor")
+    add_parser.add_argument("subdir")
+    add_parser.set_defaults(func=add_cmd)
+
+    status_parser = subparsers.add_parser('status')
+    status_parser.add_argument("subdir", nargs='*', default=["."])
+    status_parser.set_defaults(func=status_cmd)
 
     fetch_parser = subparsers.add_parser('fetch')
     fetch_parser.add_argument("-q", "--quiet", action="store_true")
@@ -945,26 +952,6 @@ if __name__ == '__main__':
     commit_parser.add_argument("commit")
     commit_parser.add_argument("subdir", nargs='?', default=".")
     commit_parser.set_defaults(func=commit_cmd)
-
-    clone_parser = subparsers.add_parser('clone')
-    clone_parser.add_argument("-q", "--quiet", action="store_true")
-    clone_parser.add_argument("-v", "--verbose", action="store_true")
-    clone_parser.add_argument('-b', "--branch", help="The branch to maintain integration changes on")
-    clone_parser.add_argument("--progress", action="store_true")
-    clone_parser.add_argument("--upstream", help="An optional upstream repository to monitor")
-    clone_parser.add_argument("--upstream-branch", help="An optional upstream branch to monitor")
-    clone_parser.add_argument("-m", "--message")
-    clone_parser.add_argument("repository", help="The repository to maintain integration changes in")
-    clone_parser.add_argument("upstream_repository", nargs='?', default=None, help="An optional upstream to monitor")
-    clone_parser.add_argument("subdir")
-    clone_parser.set_defaults(func=clone_cmd)
-
-    branch_parser = subparsers.add_parser('branch')
-    branch_parser.add_argument('-b', "--branch", required=True)
-    branch_parser.add_argument("-v", "--verbose", action="store_true")
-    branch_parser.add_argument("--last-subdir-commit", help=argparse.SUPPRESS)
-    branch_parser.add_argument("subdir", nargs='?', default=".")
-    branch_parser.set_defaults(func=branch_cmd)
 
     rebase_parser = subparsers.add_parser('rebase') 
     rebase_parser.add_argument("-q", "--quiet", action="store_true")
@@ -983,9 +970,12 @@ if __name__ == '__main__':
     push_parser.add_argument("subdir", nargs='?', default=".")
     push_parser.set_defaults(func=push_cmd)
 
-    status_parser = subparsers.add_parser('status')
-    status_parser.add_argument("subdir", nargs='*', default=["."])
-    status_parser.set_defaults(func=status_cmd)
+    branch_parser = subparsers.add_parser('branch')
+    branch_parser.add_argument('-b', "--branch", required=True)
+    branch_parser.add_argument("-v", "--verbose", action="store_true")
+    branch_parser.add_argument("--last-subdir-commit", help=argparse.SUPPRESS)
+    branch_parser.add_argument("subdir", nargs='?', default=".")
+    branch_parser.set_defaults(func=branch_cmd)
 
     config_parser = subparsers.add_parser('config')
     config_parser.add_argument("--key", required=True)
@@ -1004,7 +994,7 @@ if __name__ == '__main__':
     # To allow common code to support multiple commands we do some
     # normalizing of the returned subdir_args namespace.
     #
-    # E.g. --dry-run isn't applicable to git subdir clone, but the
+    # E.g. --dry-run isn't applicable to git subdir add, but the
     # implementation is based on do_commit() which is shared between commands
     # including git subdir commit which does have a --dry-run option
     #
