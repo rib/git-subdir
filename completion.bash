@@ -57,11 +57,10 @@ __git_subdir_find_subdirs()
 
 _git_subdir()
 {
-    local subcommands='init fetch commit clone branch rebase push status config'
+    local subcommands='add fetch commit branch rebase push status config'
     local subcommand=$(__git_find_on_cmdline "$subcommands")
     local n_positionals=$(__git_subdir_count_positionals "$subcommand")
-    local init_opts="--branch --upstream= --upstream-branch= --pre-integrated-commit= "
-    local clone_opts="--branch --upstream= --upstream-branch= --message "
+    local add_opts="--branch --upstream= --upstream-branch= --pre-integrated-commit= --message= "
     local fetch_opts="--progress"
     local branch_opts="--branch= "
     local rebase_opts="--local --onto= "
@@ -77,18 +76,18 @@ _git_subdir()
         ,*)
             __gitcomp "init fetch commit clone branch rebase push status config"
             ;;
-        init,--*)
-            __gitcomp "$init_opts"
+        add,--*)
+            __gitcomp "$add_opts"
             return
             ;;
-        init,*)
+        add,*)
             if test $n_positionals -eq 0; then
-                init_opts="$init_opts <repository> [<upstream>] <subdir> "
+                add_opts="$add_opts <repository> [<upstream>] <subdir> "
             fi
             if test $n_positionals -lt 3; then
-                init_opts="$init_opts [<upstream>] <subdir> "
+                add_opts="$add_opts [<upstream>] <subdir> "
             fi
-            __gitcomp "$init_opts "
+            __gitcomp "$add_opts "
             return
             ;;
         fetch,--*)
@@ -108,20 +107,6 @@ _git_subdir()
                 commit_opts="$commit_opts $(__git_subdir_find_subdirs)"
             fi
             __gitcomp "$commit_opts"
-            return
-            ;;
-        clone,--*)
-            __gitcomp "$clone_opts"
-            return
-            ;;
-        clone,*)
-            if test $n_positionals -eq 0; then
-                clone_opts="$clone_opts <repository> [<upstream>] <subdir> "
-            fi
-            if test $n_positionals -lt 3; then
-                clone_opts="$clone_opts [<upstream>] <subdir> "
-            fi
-            __gitcomp "$clone_opts "
             return
             ;;
         branch,--*)
