@@ -170,7 +170,7 @@ CONFIGURATION
 COMPARED TO SIMILAR TOOLS
 =========================
 
-*git subdir* serves a similar purpose to git-submodule(1), git-subtree(1) and git-subrepo(1) so here are a few notes to help distinguish the tools.
+*git subdir* serves a similar purpose to git-submodule(1), git-subtree(1) so here are a few notes to help distinguish the tools.
 
 *git submodule*  
 -   Developers cloning a repo that uses *git subdir* don’t need to know about or use *git subdir*.
@@ -181,15 +181,6 @@ COMPARED TO SIMILAR TOOLS
 -   *git subtree* isn’t designed to facilitate rebasing integration changes for an external repository and is generally geared around using merge commits to sync with upstream. For long lived integration changes, this may mean dealing with with conflicts without the original context of the changes when merging.
 
 -   Similarly *git subtree* doesn’t have provisions for rebasing local, upstreamable changes.
-
-*git subrepo*  
--   The initial inspiration for *git subdir*.
-
--   *git subdir* takes a different approach to branching by rebasing and filtering local changes onto an upstream commit to ease upstreaming those local changes.
-
--   By differentiating an integration branch from an upstream branch *git subdir* can further streamline the process of upstreaming some changes while maintaining other integration changes private to your project.
-
--   The use of an integration branch and saving the refs for what content is committed to a subdirectory avoids loosing track of individual changes behind the squash commits used to pull in upstream changes.
 
 LICENSE
 =======
