@@ -2,12 +2,12 @@
 .\"     Title: git-subdir
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/01/2016
+.\"      Date: 12/30/2016
 .\"    Manual: Git Subdir Manual
 .\"    Source: Git Subdir
 .\"  Language: English
 .\"
-.TH "GIT\-SUBDIR" "1" "10/01/2016" "Git Subdir" "Git Subdir Manual"
+.TH "GIT\-SUBDIR" "1" "12/30/2016" "Git Subdir" "Git Subdir Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -36,7 +36,7 @@ git-subdir \- Integrate the content of a repository into a subdirectory
 \fIgit subdir fetch\fR [<subdir>\&...]
 \fIgit subdir commit\fR[\-m <message] [\-\-dry\-run] <commit> [<subdir>]
 \fIgit subdir branch\fR [\-b branch] [<subdir>]
-\fIgit subdir rebase\fR [<subdir>]
+\fIgit subdir update\fR [<subdir>]
 \fIgit subdir push\fR [\-\-upstream] [\-\-dry\-run] [<subdir>]
 \fIgit subdir status\fR [<subdir>\&...]
 \fIgit subdir config\fR \-\-key <key> [\-\-value <value>] [\-\-unset] [<subdir>]
@@ -45,7 +45,7 @@ git-subdir \- Integrate the content of a repository into a subdirectory
 .sp
 \fIgit subdir\fR maintains the content of an external Git repository within a subdirectory of your repository\&.
 .sp
-Local changes to the subdirectory can be filtered onto a branch and pushed back upstream\&. Long lived integration changes (such as to integrate an external project into your build system) are maintained on a branch and rebased each time you sync with the latest upstream\&.
+Local changes to the subdirectory can be filtered onto a branch and pushed back upstream\&. Long lived integration changes (such as to integrate an external project into your build system) are maintained on a branch and rebased each time you update to the latest upstream\&.
 .sp
 Developers can clone your project and freely commit changes to subdirectories without needing to know about or use \fIgit subdir\fR which can be considered a project maintainer\(cqs tool; only needed when re\-syncing a subdirectory\(cqs content with upstream\&.
 .SH "COMMANDS"
@@ -153,9 +153,13 @@ Be verbose\&.
 .sp
 Replaces the contents of <subdir> with the contents of <commit> in a single squashed commit\&. <commit> should be in the layout of the external repository\&.
 .sp
-If the <commit> is not an upstream commit it should then be pushed to the remote integration branch for others to be able to rebase your project\-specific changes onto different upstream versions\&. Running \fIgit subdir status\fR will try to warn when the last squashed <commit> doesn\(cqt appear to have been published for others\&.
+If the <commit> is not an upstream commit it should then be pushed to the remote integration branch for others to be able to rebase your project\-specific changes onto different upstream versions\&. Running \fIgit subdir status\fR will try to warn when the last squashed <commit> doesn\(cqt appear to have been published for others\&. (See \fIgit subdir push\fR)
 .sp
-Note: it\(cqs ok to rebase these squash commits on a topic branch without confusing \fIgit subdir\fR, but it\(cqs recommended to avoid squashing extra changes within <subdir> into these commits, otherwise if you later use \fIgit subdir branch\fR you will see these extra changes split back out into a separate, poorly named patch\&.
+Note: it\(cqs ok to rebase these squash commits on a topic branch without confusing \fIgit subdir\fR, but it\(cqs recommended to avoid squashing extra changes into these commits, because commands like \fIgit subdir branch\fR you will split these extra changes back out into a separate, poorly named patch\&.
+.sp
+Note: Every time new content is squash committed to a subdirectory then \fIgit subdir\fR also creates a \fIref\fR for the commit whose content was used so that it can be referenced as a base for later \fIgit subdir\fR commands\&. These refs need to be published to your remote integration repo for other project maintainers too\&. (See \fIgit subdir push\fR)
+.sp
+Note: the extra squash commit references effectively connect the revision history of the subdirectory with that of the external project, but this connection is only preserved within the integration branch so users fetching your project don\(cqt also end up fetching the full history of these external projects\&. When the squash commit is first made then the reference is stored in <subdir>/\&.git\-subdir/refs and when pushed to your remote integration repo these are stored under \&.git/refs/git\-subdir/\&.
 .SS "branch"
 .sp
 .if n \{\
@@ -169,13 +173,13 @@ Note: it\(cqs ok to rebase these squash commits on a topic branch without confus
 .\}
 .sp
 Creates a branch in the layout of the external project, and filters any patches that affect <subdir> onto this branch too\&. The branch is based on an upstream commit so it\(cqs possible to manually push changes upstream from here\&. Another use case might be to manually rebase on a more recent upstream before committing the result with \fIgit subdir commit\fR\&.
-.SS "rebase"
+.SS "update"
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fIgit subdir rebase\fR [<subdir>]
+\fIgit subdir update\fR [<subdir>]
 .fi
 .if n \{\
 .RE
@@ -317,7 +321,7 @@ At this point the upstream may have improvements we want, while we still want to
 .RS 4
 .\}
 .nf
-$ git subdir rebase duper
+$ git subdir update duper
 .fi
 .if n \{\
 .RE
@@ -327,9 +331,9 @@ Will fetch the latest upstream, rebase the local change and commit the result ba
 .sp
 If you run \fIgit subdir status duper\fR now you will see a warning\&.
 .sp
-As part of this rebase your local change was rebased on upstream and \fIgit subdir status\fR is reminding you to push the rebased branch as your latest super\-integration branch\&.
+As part of this update your local change was rebased on upstream and \fIgit subdir status\fR is reminding you to push the rebased branch as your latest super\-integration branch\&.
 .sp
-Every time a subdirectory is updated (either via a commit or a rebase) then \fIgit subdir\fR also creates a \fIref\fR for the commit whose content is used to update a subdirectory so that the commit can always be used as a base for later \fIgit subdir\fR commands\&. In addition to the integration branch, these refs should be published for other project maintainers too\&.
+Every time new contents are squash committed to a subdirectory (either via a \fIgit subdir commit\fR or a \fIgit subdir update\fR) then \fIgit subdir\fR also creates a \fIref\fR for the commit whose content was used so that the commit can always be used as a base for later \fIgit subdir\fR commands\&. In addition to the integration branch, these refs should be published for other project maintainers too\&. Note that these references effectively connect the revision history of the subdirectory with that of the external project, but this connection is only preserved within the integration branch so users fetching your project don\(cqt also end up fetching the full history of these external projects\&.
 .sp
 \fIgit subdir push\fR will push your integration branch (super\-integration) and commit refs to your configured integration repo:
 .sp
@@ -349,7 +353,7 @@ $ git subdir push duper
 \fIgit subdir\fR will create \fIsubdir\-upstream/<subdir>\fR and \fIsubdir\-integration/<subdir>\fR remotes in $GIT_DIR/ but never assumes these exist and always updates them before use based on the current \&.git\-subdir configuration\&.
 .SH "COMPARED TO SIMILAR TOOLS"
 .sp
-\fIgit subdir\fR serves a similar purpose to git\-submodule(1), git\-subtree(1) and git\-subrepo(1) so here are a few notes to help distinguish the tools\&.
+\fIgit subdir\fR serves a similar purpose to git\-submodule(1), git\-subtree(1) so here are a few notes to help distinguish the tools\&.
 .PP
 \fIgit submodule\fR
 .RS 4
@@ -409,58 +413,6 @@ isn\(cqt designed to facilitate rebasing integration changes for an external rep
 Similarly
 \fIgit subtree\fR
 doesn\(cqt have provisions for rebasing local, upstreamable changes\&.
-.RE
-.RE
-.PP
-\fIgit subrepo\fR
-.RS 4
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-The initial inspiration for
-\fIgit subdir\fR\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-\fIgit subdir\fR
-takes a different approach to branching by rebasing and filtering local changes onto an upstream commit to ease upstreaming those local changes\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-By differentiating an integration branch from an upstream branch
-\fIgit subdir\fR
-can further streamline the process of upstreaming some changes while maintaining other integration changes private to your project\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-The use of an integration branch and saving the refs for what content is committed to a subdirectory avoids loosing track of individual changes behind the squash commits used to pull in upstream changes\&.
 .RE
 .RE
 .SH "LICENSE"

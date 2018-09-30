@@ -14,7 +14,7 @@ SYNOPSIS
 'git subdir fetch' [<subdir>...]
 'git subdir commit'[-m <message] [--dry-run] <commit> [<subdir>]
 'git subdir branch' [-b branch] [<subdir>]
-'git subdir rebase' [<subdir>]
+'git subdir update' [<subdir>]
 'git subdir push' [--upstream] [--dry-run] [<subdir>]
 'git subdir status' [<subdir>...]
 'git subdir config' --key <key> [--value <value>] [--unset] [<subdir>]
@@ -24,7 +24,7 @@ DESCRIPTION
 
 'git subdir' maintains the content of an external Git repository within a subdirectory of your repository.
 
-Local changes to the subdirectory can be filtered onto a branch and pushed back upstream. Long lived integration changes (such as to integrate an external project into your build system) are maintained on a branch and rebased each time you sync with the latest upstream.
+Local changes to the subdirectory can be filtered onto a branch and pushed back upstream. Long lived integration changes (such as to integrate an external project into your build system) are maintained on a branch and rebased each time you update to the latest upstream.
 
 Developers can clone your project and freely commit changes to subdirectories without needing to know about or use 'git subdir' which can be considered a project maintainer's tool; only needed when re-syncing a subdirectory's content with upstream.
 
@@ -91,9 +91,13 @@ commit
 
 Replaces the contents of <subdir> with the contents of <commit> in a single squashed commit. <commit> should be in the layout of the external repository.
 
-If the <commit> is not an upstream commit it should then be pushed to the remote integration branch for others to be able to rebase your project-specific changes onto different upstream versions. Running 'git subdir status' will try to warn when the last squashed <commit> doesn't appear to have been published for others.
+If the <commit> is not an upstream commit it should then be pushed to the remote integration branch for others to be able to rebase your project-specific changes onto different upstream versions. Running 'git subdir status' will try to warn when the last squashed <commit> doesn't appear to have been published for others. (See 'git subdir push')
 
-Note: it's ok to rebase these squash commits on a topic branch without confusing 'git subdir', but it's recommended to avoid squashing extra changes within <subdir> into these commits, otherwise if you later use 'git subdir branch' you will see these extra changes split back out into a separate, poorly named patch.
+Note: it's ok to rebase these squash commits on a topic branch without confusing 'git subdir', but it's recommended to avoid squashing extra changes into these commits, because commands like 'git subdir branch' you will split these extra changes back out into a separate, poorly named patch.
+
+Note: Every time new content is squash committed to a subdirectory then 'git subdir' also creates a 'ref' for the commit whose content was used so that it can be referenced as a base for later 'git subdir' commands. These refs need to be published to your remote integration repo for other project maintainers too. (See 'git subdir push')
+
+Note: the extra squash commit references effectively connect the revision history of the subdirectory with that of the external project, but this connection is only preserved within the integration branch so users fetching your project don't also end up fetching the full history of these external projects. When the squash commit is first made then the reference is stored in <subdir>/.git-subdir/refs and when pushed to your remote integration repo these are stored under .git/refs/git-subdir/.
 
 branch
 ~~~~~~
@@ -103,11 +107,11 @@ branch
 
 Creates a branch in the layout of the external project, and filters any patches that affect <subdir> onto this branch too. The branch is based on an upstream commit so it's possible to manually push changes upstream from here. Another use case might be to manually rebase on a more recent upstream before committing the result with 'git subdir commit'.
 
-rebase
+update
 ~~~~~~
 
 [verse]
-'git subdir rebase' [<subdir>]
+'git subdir update' [<subdir>]
 
 This fetches from the configured upstream and integration repositories, then (if both branches have been configured) rebases integration changes on the latest upstream changes, rebases any local changes on top of this and then commits the result.
 
@@ -165,15 +169,15 @@ Now make a local change to the duper/ subdirectory...
 
 At this point the upstream may have improvements we want, while we still want to keep our change.
 
-  $ git subdir rebase duper
+  $ git subdir update duper
 
 Will fetch the latest upstream, rebase the local change and commit the result back.
 
 If you run 'git subdir status duper' now you will see a warning.
 
-As part of this rebase your local change was rebased on upstream and 'git subdir status' is reminding you to push the rebased branch as your latest super-integration branch.
+As part of this update your local change was rebased on upstream and 'git subdir status' is reminding you to push the rebased branch as your latest super-integration branch.
 
-Every time a subdirectory is updated (either via a commit or a rebase) then 'git subdir' also creates a 'ref' for the commit whose content is used to update a subdirectory so that the commit can always be used as a base for later 'git subdir' commands. In addition to the integration branch, these refs should be published for other project maintainers too.
+Every time new contents are squash committed to a subdirectory (either via a 'git subdir commit' or a 'git subdir update') then 'git subdir' also creates a 'ref' for the commit whose content was used so that the commit can always be used as a base for later 'git subdir' commands. In addition to the integration branch, these refs should be published for other project maintainers too. Note that these references effectively connect the revision history of the subdirectory with that of the external project, but this connection is only preserved within the integration branch so users fetching your project don't also end up fetching the full history of these external projects.
 
 'git subdir push' will push your integration branch (super-integration) and commit refs to your configured integration repo:
 

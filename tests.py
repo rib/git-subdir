@@ -269,7 +269,7 @@ class TestSubdir(unittest.TestCase):
     # also expect that the result of rebasing local changes will get pushed
     # back to this integration repo such that local changes aren't lost if we
     # squash commit this result to subdir.
-    def test_rebase_with_integration_repo_only(self):
+    def test_update_with_integration_repo_only(self):
         """tests rebasing local subdir changes on upstream changes since
         last squash commit"""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
@@ -285,7 +285,7 @@ class TestSubdir(unittest.TestCase):
         self.commit_prepend('subdir_integration', 'sub-file.txt', 'integration update 2')
 
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir rebase --message "rebase foo" ./foo'), 0)
+        self.assertEqual(shell('git subdir update --message "update foo" ./foo'), 0)
 
         self.assertTrue(self.file_contains('foo/sub-file.txt', 'integration update 1'))
         self.assertTrue(self.file_contains('foo/sub-file.txt', 'integration update 2'))
@@ -294,7 +294,7 @@ class TestSubdir(unittest.TestCase):
         self.assertTrue(self.file_contains('foo/sub-file.txt', 'local sub line 5'))
 
 
-    def test_rebase_with_integration_and_upstream(self):
+    def test_update_with_integration_and_upstream(self):
         """tests rebasing local subdir changes on integration changes and
         rebasing those on the upstream changes since last squash commit"""
         os.chdir(os.path.join(self.testdir, 'container_repo'))
@@ -313,7 +313,7 @@ class TestSubdir(unittest.TestCase):
         self.commit_prepend('subdir_upstream', 'sub-file.txt', 'upstream update 2')
 
         os.chdir(os.path.join(self.testdir, 'container_repo'))
-        self.assertEqual(shell('git subdir rebase --message "rebase foo" ./foo'), 0)
+        self.assertEqual(shell('git subdir update --message "update foo" ./foo'), 0)
 
         self.assertTrue(self.file_contains('foo/sub-file.txt', 'upstream diverge 1'))
         self.assertTrue(self.file_contains('foo/sub-file.txt', 'upstream update 1'))
@@ -328,7 +328,7 @@ class TestSubdir(unittest.TestCase):
         #self.commit_prepend('subdir_upstream', 'sub-file.txt', 'upstream update 3')
 
         #os.chdir(os.path.join(self.testdir, 'container_repo'))
-        #self.assertEqual(shell('git subdir rebase --message "rebase foo" ./foo'), 0)
+        #self.assertEqual(shell('git subdir update --message "update foo" ./foo'), 0)
 
         #self.assertTrue(self.file_contains('foo/sub-file.txt', 'integration update 1'))
         #self.assertTrue(self.file_contains('foo/sub-file.txt', 'integration update 1'))
@@ -336,7 +336,7 @@ class TestSubdir(unittest.TestCase):
 
 
     def test_push_integration(self):
-        self.test_rebase_with_integration_and_upstream()
+        self.test_update_with_integration_and_upstream()
 
         os.chdir(os.path.join(self.testdir, 'container_repo'))
         self.assertEqual(shell('git subdir push ./foo'), 0)

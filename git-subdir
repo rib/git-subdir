@@ -121,7 +121,7 @@ def initialize_state():
 
     global _original_branch
 
-    # TODO: check we aren't in the middle of a failed rebase
+    # TODO: check we aren't in the middle of a failed update/rebase
 
     if run_priv(['git', 'rev-parse', '--git-dir']) != 0:
         sys.exit("Not a git repository (or any of the parent directories)")
@@ -714,7 +714,7 @@ def do_rebase():
     run_priv(['git', 'branch', '-D', local_rebase_branch])
 
 
-def rebase_cmd(args):
+def update_cmd(args):
 
     initialize_state()
     validate_existing_subdir(args.subdir)
@@ -953,16 +953,16 @@ if __name__ == '__main__':
     commit_parser.add_argument("subdir", nargs='?', default=".")
     commit_parser.set_defaults(func=commit_cmd)
 
-    rebase_parser = subparsers.add_parser('rebase') 
-    rebase_parser.add_argument("-q", "--quiet", action="store_true")
-    rebase_parser.add_argument("-v", "--verbose", action="store_true")
-    rebase_parser.add_argument("-l", "--local", action="store_true")
-    rebase_parser.add_argument("-m", "--message")
-    rebase_parser.add_argument("--last-subdir-commit", help=argparse.SUPPRESS)
-    rebase_parser.add_argument("--onto")
+    update_parser = subparsers.add_parser('update')
+    update_parser.add_argument("-q", "--quiet", action="store_true")
+    update_parser.add_argument("-v", "--verbose", action="store_true")
+    update_parser.add_argument("-l", "--local", action="store_true")
+    update_parser.add_argument("-m", "--message")
+    update_parser.add_argument("--last-subdir-commit", help=argparse.SUPPRESS)
+    update_parser.add_argument("--onto")
     #FIXME -p, --preserve-merges, -s, --strategy
-    rebase_parser.add_argument("subdir", nargs='?', default=".")
-    rebase_parser.set_defaults(func=rebase_cmd)
+    update_parser.add_argument("subdir", nargs='?', default=".")
+    update_parser.set_defaults(func=update_cmd)
 
     push_parser = subparsers.add_parser('push')
     push_parser.add_argument("--upstream", action="store_true")
@@ -1005,7 +1005,7 @@ if __name__ == '__main__':
     if not "progress" in subdir_args:
         setattr(subdir_args, 'progress', False)
 
-    # for rebase which is depends on do_commit()
+    # for update which depends on do_commit()
     if not "message" in subdir_args:
         setattr(subdir_args, 'message', None)
 
